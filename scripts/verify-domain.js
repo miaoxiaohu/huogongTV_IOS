@@ -132,6 +132,47 @@ console.log("== merging a page of shows ==");
     );
 }
 
+console.log("== a page of a hot board joins the pages on the screen ==");
+{
+    const show = (id, title) => ({ id, title, cover: "", description: "", badge: "", tags: "" });
+    const first = {
+        items: [show("1", "第一部"), show("2", "第二部")],
+        positions: { 1: { rank: 1, heat: "9000万热度" }, 2: { rank: 2, heat: "8000万热度" } },
+        totalPages: 5,
+        updatedText: "10月19日已更新",
+    };
+    const second = {
+        items: [show("3", "第三部")],
+        positions: { 3: { rank: 21, heat: "7000万热度" } },
+        totalPages: 5,
+        updatedText: "10月19日已更新",
+    };
+    const joined = model.mergeBoardPage(first, second, false);
+    eq(
+        joined.items.map((item) => item.id),
+        ["1", "2", "3"],
+        "the new page is appended"
+    );
+    eq(
+        Object.keys(joined.positions).sort(),
+        ["1", "2", "3"],
+        "the positions of the earlier pages stay, or their cards would lose the rank badge"
+    );
+    eq(joined.positions["1"].rank, 1, "the first page keeps its rank");
+    eq(joined.positions["3"].rank, 21, "the new page brings its own");
+    const replaced = model.mergeBoardPage(first, second, true);
+    eq(
+        replaced.items.map((item) => item.id),
+        ["3"],
+        "a refresh replaces the pages"
+    );
+    eq(
+        Object.keys(replaced.positions),
+        ["3"],
+        "and the positions with them"
+    );
+}
+
 console.log("== checking a service address ==");
 {
     eq(model.normalizeBaseUrl("http://192.168.1.10:8787"), "http://192.168.1.10:8787", "a plain address is kept");

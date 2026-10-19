@@ -101,6 +101,26 @@ export function mergePage(existing: Series[], incoming: Series[]): Series[] {
     new Map([...existing, ...incoming].map((item) => [item.id, item])).values()
   );
 }
+
+/**
+ * How a page of a hot board joins the pages that are already on the screen.
+ *
+ * The positions of the earlier pages have to stay: a card that loses its
+ * position loses its rank badge, and the badge is the whole point of the
+ * board.
+ */
+export function mergeBoardPage(
+  previous: { items: Series[]; positions: Record<string, RankPosition> },
+  board: HotRankingPage,
+  replace: boolean
+): { items: Series[]; positions: Record<string, RankPosition> } {
+  return {
+    items: replace ? board.items : mergePage(previous.items, board.items),
+    positions: replace
+      ? board.positions
+      : { ...previous.positions, ...board.positions },
+  };
+}
 export function normalizeBaseUrl(input: string): string {
   const url = input.trim().replace(/\/+$/, "");
   if (!/^https?:\/\/[a-z\d.\-\[\]:]+(?::\d+)?$/i.test(url))

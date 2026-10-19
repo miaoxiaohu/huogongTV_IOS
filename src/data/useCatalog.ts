@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef } from "react";
 import {
   ContentProvider,
   HotRankingPage,
+  mergeBoardPage,
   mergePage,
   Series,
 } from "../domain/model";
@@ -55,11 +56,12 @@ export function useCatalog(
       if (mode === "ranking") {
         if (!provider.ranking) throw new Error("这个来源没有热播榜");
         const board: HotRankingPage = await provider.ranking(page);
+        const merged = mergeBoardPage(previous, board, replace);
         Object.assign(next, {
-          items: replace ? board.items : mergePage(previous.items, board.items),
+          items: merged.items,
           page,
           more: board.items.length > 0 && page < board.totalPages,
-          positions: board.positions,
+          positions: merged.positions,
           updatedText: board.updatedText,
         });
       } else {
