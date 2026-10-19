@@ -26,6 +26,7 @@ const SUITES = [
     ["local catalogue", "verify-catalogue.js"],
     ["media cache", "verify-cache.js"],
     ["favourite updates", "verify-favorites.js"],
+    ["search history", "verify-search-history.js"],
 ];
 
 let failed = 0;

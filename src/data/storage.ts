@@ -3,7 +3,13 @@ import { Library, Progress, Series, Settings } from "../domain/model";
 import { normalizeFrameMode, normalizeSpeed } from "./playback";
 import { CatalogueRoute, CatalogueSnapshot, emptySnapshot } from "./catalogue";
 import { FavoriteUpdate } from "./favorites";
-const empty: Library = { favorites: [], progress: {}, favoriteUpdates: {} };
+import { readSearches } from "./searchHistory";
+const empty: Library = {
+  favorites: [],
+  progress: {},
+  favoriteUpdates: {},
+  searches: [],
+};
 const CATALOGUE_KEY = "catalogue.v1";
 let pending = Promise.resolve();
 export async function loadState(): Promise<{
@@ -61,7 +67,12 @@ export async function loadState(): Promise<{
         if (typeof entry.position !== "number") continue;
         progress[id] = entry;
       }
-      library = { favorites: data.favorites, progress, favoriteUpdates: readUpdates(data.favoriteUpdates) };
+      library = {
+        favorites: data.favorites,
+        progress,
+        favoriteUpdates: readUpdates(data.favoriteUpdates),
+        searches: readSearches(data.searches),
+      };
     }
   } catch {}
   return { settings, library };

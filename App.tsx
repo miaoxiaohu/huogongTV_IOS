@@ -32,6 +32,7 @@ import {
   observeFavoriteUpdate,
   shouldCheck,
 } from "./src/data/favorites";
+import { rememberSearch, RecentSearch } from "./src/data/searchHistory";
 import {
   FRAME_MODES,
   PLAYBACK_SPEEDS,
@@ -85,6 +86,7 @@ export default function App() {
     favorites: [],
     progress: {},
     favoriteUpdates: {},
+    searches: [],
   });
   const libraryRef = useRef(library);
   const [tab, setTab] = useState<Tab>("推荐");
@@ -112,6 +114,8 @@ export default function App() {
   // The favourites' update check.
   const [checking, setChecking] = useState(false);
   const [favoriteStatus, setFavoriteStatus] = useState("");
+  // The search history.
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [play, setPlay] = useState<{
     detail: Detail;
     index: number;
@@ -555,9 +559,24 @@ export default function App() {
       return;
     }
     setRestoreGrid(true);
+    // The search is remembered, with the shelf it was made in: the same word
+    // means different things in the two.
+    updateLibrary((old) => ({
+      ...old,
+      searches: rememberSearch(old.searches, query, category),
+    }));
     setSearchRun((n) => n + 1);
     if (submitted === query.trim()) void catalog.refresh();
     else setSubmitted(query.trim());
+  }
+
+  /** Runs a search that was remembered. */
+  function runRemembered(entry: RecentSearch) {
+    setQuery(entry.query);
+    setCategory(entry.type);
+    setSubmitted(entry.query);
+    setRestoreGrid(true);
+    setSearchRun((n) => n + 1);
   }
   if (!ready)
     return (
@@ -855,7 +874,42 @@ export default function App() {
                   onFocus={() => setFocusArea("content")}
                   onPress={search}
                 />
+                <Button
+                  label="历史"
+                  onFocus={() => setFocusArea("content")}
+                  onPress={() => setHistoryOpen((open) => !open)}
+                />
               </View>
+              {historyOpen ? (
+                <View style={s.history}>
+                  {library.searches.length === 0 ? (
+                    <Text style={s.muted}>
+                      搜索过的剧名会保存在这里，最多 20 条。
+                    </Text>
+                  ) : (
+                    <>
+                      <View style={s.row}>
+                        {library.searches.slice(0, 10).map((entry) => (
+                          <Button
+                            key={`${entry.type}:${entry.query}`}
+                            label={`${entry.type === "comic" ? "漫剧" : "真人剧"} · ${entry.query}`}
+                            onPress={() => {
+                              setHistoryOpen(false);
+                              runRemembered(entry);
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <Button
+                        label="清空历史"
+                        onPress={() =>
+                          updateLibrary((old) => ({ ...old, searches: [] }))
+                        }
+                      />
+                    </>
+                  )}
+                </View>
+              ) : null}
               <View style={s.heading}>
                 <Text style={s.muted}>
                   {submitted
@@ -1054,6 +1108,7 @@ const s = StyleSheet.create({
   },
   quickTitle: { color: palette.text, fontSize: 20, fontWeight: "600" },
   quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  history: { gap: 10, marginBottom: 10 },
   heading: {
     flexDirection: "row",
     alignItems: "center",

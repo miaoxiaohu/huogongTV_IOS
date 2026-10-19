@@ -76,6 +76,8 @@ CI 在编译前会先做三道检查：源码按 Metro 使用的 Babel 预设解
 
 规则和电视端 `FavoriteUpdate` 一致，`scripts/verify-favorites.js` 用 Kotlin 的逐行转写整个验一遍。
 
+搜索页有「历史」按钮，记住最近 20 条搜索。**同一个词在不同分类下是两条不同的记录** ——「都市」在漫剧里和在真人剧里不是一回事。
+
 ## 播放设置
 
 播放器面板里有「播放设置」二级面板，设置页里也能改默认值：
@@ -130,6 +132,9 @@ npm run check        # 解析 + 类型检查 + 全部离线套件
 | `verify-rank.js` | 热播榜解析、热度读取、跨榜合并 | `HotRank` 的 Kotlin 转写 + 真实响应裁剪成的卡片 |
 | `verify-playback.js` | 倍速、画面模式、定时停止 | `PlaybackSpeed` / `SleepTimer` 的 Kotlin 转写 |
 | `verify-catalogue.js` | 本地索引的搜索排序、错字兜底、目录走查 | `CatalogueIndex` / `CatalogueBuilder` 的 Kotlin 用例 |
+| `verify-cache.js` | 媒体缓存的上限与清理 | 真目录 + 文件系统 mock |
+| `verify-favorites.js` | 收藏的集数水位线 | `FavoriteUpdate` 的 Kotlin 转写 |
+| `verify-search-history.js` | 搜索历史的上限与去重 | `SearchHistory` 的 Kotlin 用例 |
 
 实网套件（需要服务器在线，跑 CI 会不稳，手动执行）：
 

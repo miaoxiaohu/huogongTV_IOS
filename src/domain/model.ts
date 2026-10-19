@@ -1,6 +1,7 @@
 import { FrameMode } from "../data/playback";
 import { CatalogueRoute } from "../data/catalogue";
 import { FavoriteUpdate } from "../data/favorites";
+import { RecentSearch } from "../data/searchHistory";
 
 export interface Series {
   id: string;
@@ -37,6 +38,8 @@ export interface Library {
   progress: Record<string, Progress>;
   /** What is known about the favourites' episode counts. */
   favoriteUpdates: Record<string, FavoriteUpdate>;
+  /** The searches the user made, newest first. */
+  searches: RecentSearch[];
 }
 export interface Settings {
   baseUrl: string;
