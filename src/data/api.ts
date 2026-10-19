@@ -552,6 +552,7 @@ export class ApiProvider implements ContentProvider {
     // A blip on the probe costs the whole episode, because the signed error is
     // the one that surfaces when the fallback is gone too. A status answer is
     // final; a broken connection is not.
+    let lastError: Error | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
         await new Promise((resolve) => setTimeout(resolve, 400));
@@ -567,17 +568,22 @@ export class ApiProvider implements ContentProvider {
           },
           signal: abort.signal,
         });
-        if (!response.ok) throw new Error("not found");
+        // A 404 is the server's answer: there is no public copy of this
+        // episode. That is a fact about the episode, not about the
+        // connection, and the recovery must not spend its budget on it.
+        if (response.status === 404) throw new Error(NO_PUBLIC_SOURCE);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return { uri: url, headers: {}, quality: "360P" };
       } catch (error) {
-        if (error instanceof Error && error.message === "not found") {
-          throw new Error(NO_PUBLIC_SOURCE);
-        }
+        const failure = error as Error;
+        if (failure.message === NO_PUBLIC_SOURCE) throw failure;
+        // A broken connection says nothing about the episode.
+        lastError = failure;
       } finally {
         clearTimeout(timer);
       }
     }
-    throw new Error(NO_PUBLIC_SOURCE);
+    throw lastError || new Error(NO_PUBLIC_SOURCE);
   }
 
   private qualityNumber(value: string): number {

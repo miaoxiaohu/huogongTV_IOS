@@ -267,6 +267,31 @@ function deviceIdOf(call) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== a broken connection is not a fact about the episode ==");
+    {
+        // The public probe fails with a network error, not with a 404. That
+        // says nothing about the episode, so the signed error is the one
+        // that surfaces and the recovery may try again.
+        const server = {
+            videoModel: [{ body: "" }, { body: "" }, { body: "" }],
+            fallback: [],
+            publicProbe: [{ throw: true }, { throw: true }],
+            calls: [],
+        };
+        installMock(server);
+        const provider = new ApiProvider({ category: "short", maxQuality: 540 });
+        let message = "";
+        try {
+            await provider.resolve(EPISODE);
+        } catch (e) {
+            message = String(e && e.message);
+        }
+        message === "播放接口暂不可用"
+            ? ok("the message is 播放接口暂不可用, not 该剧集暂无公开播放资源")
+            : fail("the message was " + JSON.stringify(message));
+    }
+
+    // -----------------------------------------------------------------------
     console.log("== the public fallback survives one broken probe ==");
     {
         const server = {

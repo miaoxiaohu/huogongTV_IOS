@@ -342,23 +342,23 @@ function renditionList(captured) {
         }
         p.resolveStream = original;
 
-        // And when neither source is there, the error has to be the signed
-        // one, not the fallback one - the user needs the real reason.
+        // And when neither source is there, the fact about the episode is
+        // what the user needs: the recovery must not spend its budget on
+        // an episode that simply has no video.
         const late = LATE_EPISODES[0];
         const p2 = new ApiProvider({ category: "short", maxQuality: 540 });
         p2.resolveStream = async () => {
             throw new Error("simulated signed player outage");
         };
+        let surfaced = "";
         try {
             await p2.resolve(late.id);
-            fail("episode " + late.number + " should not be playable at all");
         } catch (e) {
-            if (String(e && e.message).includes("simulated signed player outage")) {
-                ok("with no fallback either, the signed error is the one that surfaces");
-            } else {
-                fail("the surfaced error was " + (e && e.message));
-            }
+            surfaced = String(e && e.message);
         }
+        surfaced === "该剧集暂无公开播放资源"
+            ? ok("with no fallback either, the permanent verdict is the one that surfaces")
+            : fail("the surfaced error was " + surfaced);
     }
 
     // -----------------------------------------------------------------------
