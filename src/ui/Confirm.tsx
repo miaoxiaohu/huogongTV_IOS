@@ -7,9 +7,9 @@ import { TVFocusGuideView } from "./tv/compat";
 /**
  * Asks before something is done that cannot be undone.
  *
- * The dialog is mounted only while there is something to ask about, and it
- * keeps the "already done" flag per request: a new request is a new dialog,
- * so its buttons are usable again.
+ * It draws nothing when there is nothing to ask about, and the flag that
+ * keeps a double tap from doing the thing twice goes away with the dialog.
+ * So a new dialog never starts out dead.
  *
  * The cancel button comes first, so the one that is read first is the one
  * that backs out. The `preferred` flag on it is a tvOS thing - on a phone it
