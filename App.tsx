@@ -18,6 +18,13 @@ import {
 import { BridgeProvider } from "./src/data/provider";
 import { ApiProvider } from "./src/data/api";
 import { loadState, saveLibrary, saveSettings } from "./src/data/storage";
+import {
+  FRAME_MODES,
+  PLAYBACK_SPEEDS,
+  frameModeInfo,
+  speedLabel,
+} from "./src/data/playback";
+import { FrameMode } from "./src/data/playback";
 import { useCatalog } from "./src/data/useCatalog";
 import {
   Detail,
@@ -280,6 +287,21 @@ export default function App() {
     await saveSettings(next);
     setSettings(next);
   }
+  async function changePlaybackSpeed(value: number) {
+    const next = { ...settings, playbackSpeed: value };
+    await saveSettings(next);
+    setSettings(next);
+  }
+  async function changeFrameMode(value: FrameMode) {
+    const next = { ...settings, frameMode: value };
+    await saveSettings(next);
+    setSettings(next);
+  }
+  async function changeAutoNext(on: boolean) {
+    const next = { ...settings, autoNext: on };
+    await saveSettings(next);
+    setSettings(next);
+  }
   function favorite(series: Series) {
     updateLibrary((old) => ({
       ...old,
@@ -319,6 +341,11 @@ export default function App() {
           onExit={exitPlayer}
           onProgress={record}
           maxQuality={maxQuality}
+          playbackSpeed={settings.playbackSpeed ?? 1}
+          frameMode={settings.frameMode ?? "fit"}
+          autoNext={settings.autoNext ?? true}
+          onChangeSpeed={(value) => void changePlaybackSpeed(value)}
+          onChangeFrameMode={(value) => void changeFrameMode(value)}
           onTryLowerQuality={() => {
             void changeQuality(720).catch(() =>
               setMessage("清晰度设置保存失败，请重试")
@@ -447,6 +474,44 @@ export default function App() {
                 onPress={() => changeQuality(q)}
               />
             ))}
+          </View>
+          <Text style={s.label}>默认倍速</Text>
+          <View style={s.row}>
+            {PLAYBACK_SPEEDS.map((value) => (
+              <Button
+                key={value}
+                label={speedLabel(value)}
+                primary={(settings.playbackSpeed ?? 1) === value}
+                onPress={() => changePlaybackSpeed(value)}
+              />
+            ))}
+          </View>
+          <Text style={s.label}>画面模式</Text>
+          <View style={s.row}>
+            {FRAME_MODES.map((entry) => (
+              <Button
+                key={entry.mode}
+                label={entry.label}
+                primary={(settings.frameMode ?? "fit") === entry.mode}
+                onPress={() => changeFrameMode(entry.mode)}
+              />
+            ))}
+          </View>
+          <Text style={[s.description, { marginTop: 8 }]}>
+            {frameModeInfo(settings.frameMode ?? "fit").hint}。
+          </Text>
+          <Text style={s.label}>自动连播</Text>
+          <View style={s.row}>
+            <Button
+              label="开启"
+              primary={(settings.autoNext ?? true) === true}
+              onPress={() => changeAutoNext(true)}
+            />
+            <Button
+              label="关闭"
+              primary={(settings.autoNext ?? true) === false}
+              onPress={() => changeAutoNext(false)}
+            />
           </View>
           <Text style={[s.description, { marginTop: 8 }]}>
             以下为可选：连接自建内容服务。

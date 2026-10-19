@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Library, Progress, Settings } from "../domain/model";
+import { normalizeFrameMode, normalizeSpeed } from "./playback";
 const empty: Library = { favorites: [], progress: {} };
 let pending = Promise.resolve();
 export async function loadState(): Promise<{
@@ -14,6 +15,9 @@ export async function loadState(): Promise<{
     token: "",
     category: "short",
     maxQuality: 540,
+    playbackSpeed: 1,
+    frameMode: "fit",
+    autoNext: true,
   };
   let library = empty;
   try {
@@ -30,6 +34,9 @@ export async function loadState(): Promise<{
           typeof data.maxQuality === "number" && data.maxQuality >= 360
             ? data.maxQuality
             : 540,
+        playbackSpeed: normalizeSpeed(data.playbackSpeed),
+        frameMode: normalizeFrameMode(data.frameMode),
+        autoNext: typeof data.autoNext === "boolean" ? data.autoNext : true,
       };
   } catch {}
   try {

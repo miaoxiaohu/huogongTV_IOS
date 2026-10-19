@@ -1,3 +1,5 @@
+import { FrameMode } from "../data/playback";
+
 export interface Series {
   id: string;
   title: string;
@@ -38,9 +40,14 @@ export interface Settings {
   category?: "short" | "comic";
   /** Highest video resolution to fetch. 1080 is the best the source offers. */
   maxQuality?: number;
+  /** The speed the player starts at. 1 is the normal one. */
+  playbackSpeed?: number;
+  /** How the picture fills the screen. */
+  frameMode?: FrameMode;
+  /** Whether the next episode starts by itself. */
+  autoNext?: boolean;
 }
-export interface Playback {
-  uri: string;
+export interface Playback {  uri: string;
   headers: Record<string, string>;
   /** The quality that was actually selected, e.g. "720P". */
   quality?: string;

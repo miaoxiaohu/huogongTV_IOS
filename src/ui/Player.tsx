@@ -11,7 +11,17 @@ import {
 import { TVFocusGuideView, focusTV, useTVEventHandler } from "./tv/compat";
 import Video, { VideoRef } from "react-native-video";
 import { ContentProvider, Detail, Playback, Progress } from "../domain/model";
+import { FrameMode } from "../data/playback";
 import { RecoveryController, formatClock } from "../data/recovery";
+import {
+  FRAME_MODES,
+  PLAYBACK_SPEEDS,
+  SleepTimer,
+  frameModeInfo,
+  normalizeFrameMode,
+  normalizeSpeed,
+  speedLabel,
+} from "../data/playback";
 import { Button, Notice, palette } from "./components";
 import { seekPosition, tvInsets } from "./tv/layout";
 const clock = formatClock;
@@ -24,6 +34,11 @@ export function Player({
   onProgress,
   onTryLowerQuality,
   maxQuality = 1080,
+  playbackSpeed = 1,
+  frameMode = "fit",
+  onChangeSpeed,
+  onChangeFrameMode,
+  autoNext = true,
   test = false,
 }: {
   detail: Detail;
@@ -36,6 +51,14 @@ export function Player({
   onTryLowerQuality?: () => void;
   /** The quality ceiling currently in force, so "try 720P" can be hidden. */
   maxQuality?: number;
+  /** The speed the player starts at. */
+  playbackSpeed?: number;
+  /** How the picture fills the screen. */
+  frameMode?: FrameMode;
+  onChangeSpeed?: (speed: number) => void;
+  onChangeFrameMode?: (mode: FrameMode) => void;
+  /** Whether the next episode starts by itself. */
+  autoNext?: boolean;
   test?: boolean;
 }) {
   const { width, height } = useWindowDimensions();
@@ -56,6 +79,7 @@ export function Player({
   }
   function closePanel() {
     setPanel(false);
+    setSettingsOpen(false);
     requestAnimationFrame(() => focusTV(main.current));
   }
   const [index, setIndex] = useState(initialIndex);
@@ -91,6 +115,7 @@ export function Player({
   // growing delay, and the watching position is kept.
   const [autoRecovery, setAutoRecovery] = useState(false);
   const [recoveryNote, setRecoveryNote] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const recoveryRef = useRef<RecoveryController | null>(null);
   if (!recoveryRef.current) {
     recoveryRef.current = new RecoveryController({
@@ -284,6 +309,77 @@ export function Player({
     setPosition(value);
   }
   seekRef.current = seek;
+
+  // -----------------------------------------------------------------------
+  // The playback preferences
+  // -----------------------------------------------------------------------
+  const sleepTimer = useRef(new SleepTimer());
+  const timerChoice = useRef(0);
+  const [speed, setSpeed] = useState(normalizeSpeed(playbackSpeed));
+  const [frame, setFrame] = useState(normalizeFrameMode(frameMode));
+  const [timerLabel, setTimerLabel] = useState("关闭");
+  const [timerActive, setTimerActive] = useState(false);
+  const [sleepStopped, setSleepStopped] = useState(false);
+  useEffect(() => {
+    setSpeed(normalizeSpeed(playbackSpeed));
+  }, [playbackSpeed]);
+  useEffect(() => {
+    setFrame(normalizeFrameMode(frameMode));
+  }, [frameMode]);
+  /** The timer runs on a clock of its own, so the label can be refreshed. */
+  useEffect(() => {
+    if (!timerActive) return;
+    const tick = setInterval(() => {
+      setTimerLabel(sleepTimer.current.label());
+      if (sleepTimer.current.poll()) {
+        // The timer ran out: the playback stops where it is.
+        setPaused(true);
+        setSleepStopped(true);
+        setTimerActive(false);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [timerActive]);
+  function cycleSpeed() {
+    const next = PLAYBACK_SPEEDS[(PLAYBACK_SPEEDS.indexOf(speed) + 1) % PLAYBACK_SPEEDS.length];
+    setSpeed(next);
+    onChangeSpeed?.(next);
+  }
+  function cycleFrame() {
+    const modes = FRAME_MODES.map((entry) => entry.mode);
+    const next = modes[(modes.indexOf(frame) + 1) % modes.length];
+    setFrame(next);
+    onChangeFrameMode?.(next);
+  }
+  function cycleTimer() {
+    // 关闭, then the minute choices, then the episode choices.
+    const choices: Array<() => void> = [
+      () => sleepTimer.current.cancel(),
+      () => sleepTimer.current.afterMinutes(15),
+      () => sleepTimer.current.afterMinutes(30),
+      () => sleepTimer.current.afterMinutes(60),
+      () => sleepTimer.current.afterMinutes(90),
+      () => sleepTimer.current.afterEpisodes(1),
+      () => sleepTimer.current.afterEpisodes(3),
+      () => sleepTimer.current.afterEpisodes(5),
+    ];
+    const current = timerChoice.current;
+    const next = (current + 1) % choices.length;
+    timerChoice.current = next;
+    choices[next]();
+    setTimerLabel(sleepTimer.current.label());
+    setTimerActive(sleepTimer.current.active);
+    setSleepStopped(false);
+  }
+  function playFromStart() {
+    seekStart.current = 0;
+    progress.current.completed = false;
+    progress.current.position = 0;
+    setPosition(0);
+    setFinished(false);
+    setPaused(false);
+    refresh();
+  }
   return (
     <View style={s.screen}>
       {source && !error && (
@@ -292,7 +388,8 @@ export function Player({
           ref={video}
           source={source}
           style={StyleSheet.absoluteFill}
-          resizeMode="contain"
+          resizeMode={frameModeInfo(frame).resizeMode}
+          rate={speed}
           paused={paused}
           controls={false}
           playInBackground={false}
@@ -324,6 +421,20 @@ export function Player({
             stopScrub();
             progress.current.completed = true;
             save();
+            // The sleep timer counts the episodes too, and it can also be
+            // waiting for the minutes to run out.
+            if (sleepTimer.current.episodeEnded()) {
+              setPaused(true);
+              setSleepStopped(true);
+              setTimerActive(false);
+              setTimerLabel("关闭");
+              return;
+            }
+            if (!autoNext) {
+              setFinished(true);
+              setPaused(true);
+              return;
+            }
             if (index + 1 < detail.episodes.length) switchEpisode(index + 1);
             else {
               setFinished(true);
@@ -432,9 +543,13 @@ export function Player({
             <Text style={s.subtitle}>
               {clock(position)} / {clock(duration)}
               {paused ? " · 已暂停" : ""}
+              {sleepStopped ? " · 定时停止已生效" : ""}
             </Text>
             <Text style={s.subtitle}>
-              {source?.quality ? `${source.quality} · ` : ""}原比例 · 自动连播
+              {source?.quality ? `${source.quality} · ` : ""}
+              {speedLabel(speed)} · {frameModeInfo(frame).label}
+              {timerActive ? ` · 定时 ${timerLabel}` : ""}
+              {autoNext ? " · 自动连播" : ""}
             </Text>
           </View>
           {panel ? (
@@ -446,38 +561,74 @@ export function Player({
               trapFocusDown
               style={s.controls}
             >
-              <Button
-                label="上一集"
-                disabled={index === 0 || test}
-                onPress={() => {
-                  switchEpisode(index - 1);
-                  closePanel();
-                }}
-              />
-              <Button
-                label={finished ? "重新播放" : paused ? "继续播放" : "暂停"}
-                primary
-                preferred
-                onPress={() => {
-                  togglePlayback();
-                  closePanel();
-                }}
-              />
-              <Button
-                label="下一集"
-                disabled={index === detail.episodes.length - 1 || test}
-                onPress={() => {
-                  switchEpisode(index + 1);
-                  closePanel();
-                }}
-              />
-              <Button
-                label="返回选集"
-                onPress={() => {
-                  save();
-                  onExit();
-                }}
-              />
+              {settingsOpen ? (
+                <>
+                  <Button
+                    label={`倍速 · ${speedLabel(speed)}`}
+                    onPress={cycleSpeed}
+                  />
+                  <Button
+                    label={`画面 · ${frameModeInfo(frame).label}`}
+                    onPress={cycleFrame}
+                  />
+                  <Button
+                    label={`定时 · ${timerLabel}`}
+                    onPress={cycleTimer}
+                  />
+                  <Button
+                    label="从头播放"
+                    onPress={() => {
+                      playFromStart();
+                      closePanel();
+                    }}
+                  />
+                  <Button
+                    label="返回"
+                    onPress={() => setSettingsOpen(false)}
+                  />
+                </>
+              ) : (
+                <>
+                  <Button
+                    label="上一集"
+                    disabled={index === 0 || test}
+                    onPress={() => {
+                      switchEpisode(index - 1);
+                      closePanel();
+                    }}
+                  />
+                  <Button
+                    label={
+                      finished ? "重新播放" : paused ? "继续播放" : "暂停"
+                    }
+                    primary
+                    preferred
+                    onPress={() => {
+                      togglePlayback();
+                      closePanel();
+                    }}
+                  />
+                  <Button
+                    label="下一集"
+                    disabled={index === detail.episodes.length - 1 || test}
+                    onPress={() => {
+                      switchEpisode(index + 1);
+                      closePanel();
+                    }}
+                  />
+                  <Button
+                    label="播放设置"
+                    onPress={() => setSettingsOpen(true)}
+                  />
+                  <Button
+                    label="返回选集"
+                    onPress={() => {
+                      save();
+                      onExit();
+                    }}
+                  />
+                </>
+              )}
             </TVFocusGuideView>
           ) : (
             <Text style={s.hint}>

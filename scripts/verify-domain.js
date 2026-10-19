@@ -197,7 +197,19 @@ console.log("== reading the local records back ==");
         store.clear();
         {
             const state = await storage.loadState();
-            eq(state.settings, { baseUrl: "", token: "", category: "short", maxQuality: 540 }, "nothing stored gives the defaults");
+            eq(
+                state.settings,
+                {
+                    baseUrl: "",
+                    token: "",
+                    category: "short",
+                    maxQuality: 540,
+                    playbackSpeed: 1,
+                    frameMode: "fit",
+                    autoNext: true,
+                },
+                "nothing stored gives the defaults"
+            );
             eq(state.library, { favorites: [], progress: {} }, "and an empty library");
         }
         {
@@ -210,6 +222,36 @@ console.log("== reading the local records back ==");
             eq(state.settings.maxQuality, 1080, "the stored quality is read");
             eq(state.settings.category, "comic", "the stored category is read");
             eq(state.library.favorites.length, 1, "the stored favourites are read");
+        }
+        {
+            store.set(
+                "settings.v1",
+                JSON.stringify({
+                    baseUrl: "http://1.2.3.4:1",
+                    playbackSpeed: 1.5,
+                    frameMode: "zoom",
+                    autoNext: false,
+                })
+            );
+            const state = await storage.loadState();
+            eq(state.settings.playbackSpeed, 1.5, "the stored speed is read");
+            eq(state.settings.frameMode, "zoom", "the stored frame mode is read");
+            eq(state.settings.autoNext, false, "the stored auto next is read");
+        }
+        {
+            store.set(
+                "settings.v1",
+                JSON.stringify({
+                    baseUrl: "http://1.2.3.4:1",
+                    playbackSpeed: 3,
+                    frameMode: "nonsense",
+                    autoNext: "yes",
+                })
+            );
+            const state = await storage.loadState();
+            eq(state.settings.playbackSpeed, 1, "a speed that is not on the list falls back to 1");
+            eq(state.settings.frameMode, "fit", "a frame mode that is not on the list falls back");
+            eq(state.settings.autoNext, true, "a broken auto next falls back to on");
         }
         {
             store.set("settings.v1", "{not json");

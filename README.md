@@ -43,6 +43,20 @@ CI 在编译前会先做三道检查：源码按 Metro 使用的 Babel 预设解
 
 季号支持阿拉伯数字和中文数字（「第七季」「第一百零二季」），解析规则和电视端 `ContentRepository.seasonNumber` 一致，`scripts/verify-seasons.js` 逐条对照。
 
+## 播放设置
+
+播放器面板里有「播放设置」二级面板，设置页里也能改默认值：
+
+- **倍速** 0.75× / 1× / 1.25× / 1.5× / 1.75× / 2×
+- **画面模式** 完整画面（保留比例与全部内容）/ 等比铺满（会裁掉部分画面与字幕）/ 拉伸铺满（比例会变）
+- **定时停止** 15 / 30 / 60 / 90 分钟，或再播完 1 / 3 / 5 集
+- **从头播放**
+- **自动连播** 开关
+
+定时停止跑在自己的时钟上，和倍速无关；到点后停在原处，观看位置照常保存。
+
+规则和电视端一致（`PlaybackSpeed.kt` / `PlaybackComfort.kt`），`scripts/verify-playback.js` 用 Kotlin 的逐行转写把定时器整个验一遍。
+
 ## 播放失败时
 
 跟电视端一样，播放失败会自己重试：最多 3 次，间隔 1 秒、2.5 秒、5 秒，观看位置保留。只有用户手动重试才会把次数清零。
@@ -81,6 +95,7 @@ npm run check        # 解析 + 类型检查 + 全部离线套件
 | `verify-domain.js` | 续播定位、列表合并、服务地址校验、本地记录容错 | `ResumePlayback.target` 的 Kotlin 转写 |
 | `verify-seasons.js` | 季号解析、同系列剧筛选 | `seasonNumber` / `seriesBaseTitle` 的 Kotlin 转写 |
 | `verify-rank.js` | 热播榜解析、热度读取、跨榜合并 | `HotRank` 的 Kotlin 转写 + 真实响应裁剪成的卡片 |
+| `verify-playback.js` | 倍速、画面模式、定时停止 | `PlaybackSpeed` / `SleepTimer` 的 Kotlin 转写 |
 
 实网套件（需要服务器在线，跑 CI 会不稳，手动执行）：
 
