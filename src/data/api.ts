@@ -23,6 +23,8 @@ import { sign, newDevice } from "./signer";
 import { decodeBase64Url, decryptUrl, deriveKey } from "./mediaCrypto";
 import { prepareLocalMedia } from "./media";
 import { pickSeasons, seriesBaseTitle } from "./seasons";
+import { CatalogueRoute } from "./catalogue";
+import { extractRouter } from "./html";
 import { mergeBoards, parseBoard, rankPath, routeKey } from "./rank";
 import {
     BAD_PLAYBACK_ADDRESS,
@@ -290,6 +292,33 @@ export class ApiProvider implements ContentProvider {
       (() => { throw new Error("搜索数据暂不可用"); })();
     const rows = section?.searchList || (() => { throw new Error("搜索数据结构已变化"); })();
     return this.valid((rows || []).map((item: any) => this.card(item)));
+  }
+
+  /**
+   * One page of a catalogue.
+   *
+   * The catalogue is the one thing the site still pages properly: 34 pages
+   * of 24 rows in each named route.
+   */
+  async cataloguePage(
+    route: CatalogueRoute,
+    page: number
+  ): Promise<{ rows: Series[]; totalPages: number }> {
+    const html = await this.fetchText(`${SITE}/category/${route}?page=${page}`);
+    const data = extractRouter(html);
+    const section =
+      data.loaderData?.category_page ||
+      data.loaderData?.["category_$"] ||
+      (() => {
+        throw new Error("片库数据结构已变化");
+      });
+    const rows = section?.recommendList || [];
+    const pagination = section?.pagination || {};
+    const items = this.valid(rows.map((item: any) => this.card(item)));
+    const totalPages = pagination.totalPages || 0;
+    if (totalPages < 1) throw new Error("片库分页信息缺失");
+    if ((pagination.pageNum || page) !== page) throw new Error("片库分页信息异常");
+    return { rows: items, totalPages };
   }
 
   /**

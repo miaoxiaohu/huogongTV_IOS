@@ -1,7 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Library, Progress, Settings } from "../domain/model";
 import { normalizeFrameMode, normalizeSpeed } from "./playback";
+import { CatalogueSnapshot, emptySnapshot } from "./catalogue";
 const empty: Library = { favorites: [], progress: {} };
+const CATALOGUE_KEY = "catalogue.v1";
 let pending = Promise.resolve();
 export async function loadState(): Promise<{
   settings: Settings;
@@ -73,4 +75,35 @@ export function saveLibrary(library: Library) {
 }
 export function saveSettings(settings: Settings) {
   return AsyncStorage.setItem("settings.v1", JSON.stringify(settings));
+}
+
+/**
+ * Reads the catalogue snapshot back.
+ *
+ * A snapshot that cannot be read is not a corrupt file - the app works
+ * without it, the search just falls back to the ten rows the site renders.
+ */
+export async function loadCatalogue(): Promise<CatalogueSnapshot> {
+  try {
+    const row = await AsyncStorage.getItem(CATALOGUE_KEY);
+    if (!row) return emptySnapshot();
+    const data = JSON.parse(row);
+    if (!Array.isArray(data.entries) || !Array.isArray(data.routes)) {
+      return emptySnapshot();
+    }
+    return {
+      entries: data.entries,
+      routes: data.routes,
+      cursor: data.cursor && typeof data.cursor === "object" ? data.cursor : {},
+      done: Array.isArray(data.done) ? data.done : [],
+      savedAt: typeof data.savedAt === "number" ? data.savedAt : 0,
+    };
+  } catch {
+    return emptySnapshot();
+  }
+}
+
+/** Writes the catalogue snapshot. */
+export function saveCatalogue(snapshot: CatalogueSnapshot) {
+  return AsyncStorage.setItem(CATALOGUE_KEY, JSON.stringify(snapshot));
 }

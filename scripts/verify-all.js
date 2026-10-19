@@ -23,6 +23,7 @@ const SUITES = [
     ["seasons", "verify-seasons.js"],
     ["hot board", "verify-rank.js"],
     ["playback settings", "verify-playback.js"],
+    ["local catalogue", "verify-catalogue.js"],
 ];
 
 let failed = 0;

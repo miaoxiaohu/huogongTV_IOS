@@ -6,6 +6,7 @@ import {
   mergePage,
   Series,
 } from "../domain/model";
+import { CatalogueIndex, mergeSearch, SEARCH_PAGE_SIZE } from "./catalogue";
 
 type Page = {
   items: Series[];
@@ -16,6 +17,12 @@ type Page = {
   /** Where each show sits on a hot board, when the page is one. */
   positions: Record<string, { rank: number | null; heat: string }>;
   updatedText: string;
+  /** How many shows mention the keyword, when the page is a search. */
+  matchedCount: number;
+  /** How many the paging will walk in total. */
+  totalHits: number;
+  /** Whether the results came from the one-character fallback. */
+  fuzzy: boolean;
 };
 const empty = (): Page => ({
   items: [],
@@ -25,15 +32,29 @@ const empty = (): Page => ({
   error: "",
   positions: {},
   updatedText: "",
+  matchedCount: 0,
+  totalHits: 0,
+  fuzzy: false,
 });
+
+export type CatalogOptions = {
+  mode?: "home" | "search" | "ranking";
+  /** The local index, so a search can answer with the whole library. */
+  catalogue?: CatalogueIndex | null;
+  /** Which shelf a search is narrowed to. */
+  shelf?: "short" | "comic";
+};
 
 /** The catalog stays alive across detail/playback; each query owns its pagination. */
 export function useCatalog(
   provider: ContentProvider,
   query: string | null,
   enabled: boolean,
-  mode: "home" | "search" | "ranking" = "home"
+  options: CatalogOptions = {}
 ) {
+  const mode = options.mode ?? "home";
+  const catalogue = options.catalogue ?? null;
+  const shelf = options.shelf ?? "short";
   const cache = useMemo(() => new Map<string, Page>(), [provider]);
   const key = mode === "ranking" ? "ranking" : query === null ? "home" : `search:${query}`;
   const [, redraw] = useReducer((n: number) => n + 1, 0);
@@ -63,6 +84,19 @@ export function useCatalog(
           more: board.items.length > 0 && page < board.totalPages,
           positions: merged.positions,
           updatedText: board.updatedText,
+        });
+      } else if (mode === "search" && query) {
+        // The server only ever answers with ten rows, so the local index is
+        // what fills the page. The server's rows top it up.
+        const serverRows = await provider.search(query, page);
+        const merged = mergeSearch(query, page, catalogue, serverRows, shelf);
+        Object.assign(next, {
+          items: replace ? merged.rows : mergePage(previous.items, merged.rows),
+          page,
+          more: merged.hasMore,
+          matchedCount: merged.matchedCount,
+          totalHits: merged.totalHits,
+          fuzzy: merged.fuzzy,
         });
       } else {
         const rows =

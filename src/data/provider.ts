@@ -85,4 +85,11 @@ export class BridgeProvider implements ContentProvider {
   async ranking(): Promise<HotRankingPage> {
     return { items: [], positions: {}, totalPages: 1, updatedText: "" };
   }
+  /**
+   * A self hosted service has no catalogue to walk, so the local index
+   * cannot be built against it.
+   */
+  async cataloguePage(): Promise<{ rows: Series[]; totalPages: number }> {
+    throw new Error("这个来源没有片库目录");
+  }
 }

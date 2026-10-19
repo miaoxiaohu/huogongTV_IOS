@@ -422,6 +422,45 @@ function renditionList(captured) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== the local catalogue ==");
+    {
+        // The walk against the real site, a couple of pages, and a search over
+        // what it collected.
+        const { buildCatalogue } = require(path.join(cache, "data/catalogueBuilder.js"));
+        const { CatalogueIndex, mergeSearch } = require(path.join(cache, "data/catalogue.js"));
+        // Two pages are enough to prove the chain; the whole walk is a
+        // hundred requests and belongs in the app, not in a test.
+        let requests = 0;
+        const result = await buildCatalogue(
+            async (route, page) => {
+                requests++;
+                return provider.cataloguePage(route, page);
+            },
+            { isCancelled: () => requests >= 3, attempts: 1 }
+        );
+        result.shows.length > 0
+            ? ok("the walk collected " + result.shows.length + " shows")
+            : fail("the walk collected nothing");
+        const index = new CatalogueIndex(result.shows, result.routes);
+        index.size > 0 ? ok("the index holds " + index.size + " shows") : fail("the index is empty");
+        // A title from the first page must be findable.
+        const first = result.shows[0];
+        const found = index.search(first.title.slice(0, 4));
+        found.length > 0
+            ? ok("a show from the walk is findable: " + found[0].title)
+            : fail("a show from the walk is not findable: " + first.title);
+        // And the shelf the shows came from is recorded.
+        index.labelled
+            ? ok("every show records the catalogue it came from")
+            : fail("the catalogue labels are missing");
+        // The server's own ten rows still come back.
+        const merged = mergeSearch(first.title, 1, index, [], "short");
+        merged.rows.length > 0
+            ? ok("the page of results is filled from the index")
+            : fail("the page of results is empty");
+    }
+
+    // -----------------------------------------------------------------------
     if (FULL) {
         console.log("== the whole pipeline, end to end ==");
         // Three episodes: the first one, the one whose renditions are mostly

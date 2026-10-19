@@ -1,4 +1,5 @@
 import { FrameMode } from "../data/playback";
+import { CatalogueRoute } from "../data/catalogue";
 
 export interface Series {
   id: string;
@@ -82,6 +83,14 @@ export interface ContentProvider {
    * Optional: a self hosted service has no board.
    */
   ranking?(page: number): Promise<HotRankingPage>;
+  /**
+   * One page of a catalogue, for the local index.
+   * Optional: a self hosted service has no catalogue to walk.
+   */
+  cataloguePage?(
+    route: CatalogueRoute,
+    page: number
+  ): Promise<{ rows: Series[]; totalPages: number }>;
 }
 export interface HotRankingPage {
   items: Series[];

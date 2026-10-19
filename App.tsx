@@ -17,7 +17,14 @@ import {
 } from "react-native";
 import { BridgeProvider } from "./src/data/provider";
 import { ApiProvider } from "./src/data/api";
-import { loadState, saveLibrary, saveSettings } from "./src/data/storage";
+import { loadState, saveLibrary, saveSettings, loadCatalogue, saveCatalogue } from "./src/data/storage";
+import {
+  CatalogueIndex,
+  CatalogueSnapshot,
+  CATALOGUE_ROUTES,
+  emptySnapshot,
+} from "./src/data/catalogue";
+import { buildCatalogue } from "./src/data/catalogueBuilder";
 import {
   FRAME_MODES,
   PLAYBACK_SPEEDS,
@@ -78,6 +85,18 @@ export default function App() {
   const [seasonsState, setSeasonsState] = useState<
     "loading" | "ready" | "failed"
   >("ready");
+  // The local index of the whole library, so a search is not capped at the
+  // ten rows the site renders.
+  const [catalogue, setCatalogue] = useState<CatalogueSnapshot>(emptySnapshot());
+  const [catalogueIndex, setCatalogueIndex] = useState<CatalogueIndex | null>(
+    null
+  );
+  const [walk, setWalk] = useState({
+    running: false,
+    total: 0,
+    route: "",
+    gaps: 0,
+  });
   const [play, setPlay] = useState<{
     detail: Detail;
     index: number;
@@ -117,11 +136,18 @@ export default function App() {
   const catalog = useCatalog(
     provider,
     tab === "搜索" ? submitted : null,
-    ready && ["推荐", "搜索"].includes(tab)
+    ready && ["推荐", "搜索"].includes(tab),
+    {
+      mode: tab === "搜索" ? "search" : "home",
+      catalogue: catalogueIndex,
+      shelf: settings.category === "comic" ? "comic" : "short",
+    }
   );
   // The hot board has its own pages: it is a board, not a catalogue, and it
   // follows the content type instead of the search.
-  const ranking = useCatalog(provider, null, ready && tab === "排行榜", "ranking");
+  const ranking = useCatalog(provider, null, ready && tab === "排行榜", {
+    mode: "ranking",
+  });
   useEffect(() => {
     loadState()
       .then((data) => {
@@ -139,6 +165,101 @@ export default function App() {
       })
       .finally(() => setReady(true));
   }, []);
+
+  // The local index of the whole library. It is read back at startup, and
+  // the walk that fills it runs in the background.
+  useEffect(() => {
+    let live = true;
+    loadCatalogue().then((snapshot) => {
+      if (!live) return;
+      setCatalogue(snapshot);
+      setCatalogueIndex(new CatalogueIndex(snapshot.entries, snapshot.routes));
+      // The walk starts by itself when there is nothing to search yet. It
+      // carries on in the background, and it can be picked up again from the
+      // search tab if it was interrupted.
+      if (snapshot.entries.length === 0) void startWalk(false, snapshot);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const walkCancelled = useRef(false);
+  useEffect(() => {
+    walkCancelled.current = false;
+    return () => {
+      walkCancelled.current = true;
+    };
+  }, []);
+  // The playback needs the network more than the walk does.
+  useEffect(() => {
+    if (play) walkCancelled.current = true;
+  }, [play]);
+  async function startWalk(fromScratch: boolean, base?: CatalogueSnapshot) {
+    if (walk.running) return;
+    // A self hosted service has no catalogue to walk.
+    if (settings.baseUrl) {
+      setMessage("这个来源没有片库目录，搜索只能用到站方的十条");
+      return;
+    }
+    const start = fromScratch ? emptySnapshot() : base ?? catalogue;
+    setWalk({ running: true, total: start.entries.length, route: "", gaps: 0 });
+    let snapshot = start;
+    try {
+      const result = await buildCatalogue(
+        (route, page) => provider.cataloguePage(route, page),
+        {
+          resume: start.cursor,
+          done: start.done,
+          isCancelled: () => walkCancelled.current,
+          onPage: (step) => {
+            // The checkpoint is written as the walk goes, so an interrupted
+            // walk carries on instead of starting over.
+            snapshot = {
+              entries: [...snapshot.entries, ...step.fresh],
+              routes: [...snapshot.routes, ...step.fresh.map(() => step.route)],
+              cursor: step.cursor,
+              done: step.done,
+              savedAt: Date.now(),
+            };
+            setCatalogue(snapshot);
+            setCatalogueIndex(
+              new CatalogueIndex(snapshot.entries, snapshot.routes)
+            );
+            setWalk({
+              running: true,
+              total: snapshot.entries.length,
+              route: step.route,
+              gaps: step.gaps.length,
+            });
+            void saveCatalogue(snapshot);
+          },
+        }
+      );
+      snapshot = {
+        entries: [...snapshot.entries, ...result.shows],
+        routes: [...snapshot.routes, ...result.routes],
+        cursor: result.cursor,
+        done: result.done,
+        savedAt: Date.now(),
+      };
+      await saveCatalogue(snapshot);
+      setCatalogue(snapshot);
+      setCatalogueIndex(new CatalogueIndex(snapshot.entries, snapshot.routes));
+      setWalk({
+        running: false,
+        total: snapshot.entries.length,
+        route: "",
+        gaps: result.gaps.length,
+      });
+      if (result.gaps.length > 0) {
+        setMessage(`索引有 ${result.gaps.length} 页没抓到，可再走一次`);
+      }
+    } catch (error) {
+      setWalk((old) => ({ ...old, running: false }));
+      setMessage("片库索引没走完，可继续");
+    }
+  }
   const updateLibrary = useCallback((update: (old: Library) => Library) => {
     const next = update(libraryRef.current);
     libraryRef.current = next;
@@ -377,6 +498,8 @@ export default function App() {
         }))
       : catalog.items;
   const shelfLabel = category === "short" ? "真人剧" : "漫剧";
+  // The walk is done when every catalogue reached its final page.
+  const catalogueComplete = catalogue.done.length >= CATALOGUE_ROUTES.length;
   return (
     <View
       style={[
@@ -579,33 +702,62 @@ export default function App() {
       ) : (
         <>
           {tab === "搜索" ? (
-            <View style={s.search}>
-              <TextInput
-                accessibilityLabel="搜索短剧"
-                value={query}
-                onChangeText={setQuery}
-                placeholder="输入剧名或关键词"
-                placeholderTextColor="#747383"
-                onFocus={() => {
-                  setEditing("search");
-                  setFocusArea("content");
-                }}
-                onBlur={() => setEditing(undefined)}
-                onSubmitEditing={search}
-                returnKeyType="search"
-                style={[
-                  s.input,
-                  { flex: 1 },
-                  editing === "search" && { borderColor: palette.accent },
-                ]}
-              />
-              <Button
-                label="搜索"
-                primary
-                onFocus={() => setFocusArea("content")}
-                onPress={search}
-              />
-            </View>
+            <>
+              <View style={s.search}>
+                <TextInput
+                  accessibilityLabel="搜索短剧"
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="输入剧名或关键词（当前片库全量）"
+                  placeholderTextColor="#747383"
+                  onFocus={() => {
+                    setEditing("search");
+                    setFocusArea("content");
+                  }}
+                  onBlur={() => setEditing(undefined)}
+                  onSubmitEditing={search}
+                  returnKeyType="search"
+                  style={[
+                    s.input,
+                    { flex: 1 },
+                    editing === "search" && { borderColor: palette.accent },
+                  ]}
+                />
+                <Button
+                  label="搜索"
+                  primary
+                  onFocus={() => setFocusArea("content")}
+                  onPress={search}
+                />
+              </View>
+              <View style={s.heading}>
+                <Text style={s.muted}>
+                  {submitted
+                    ? `站内找到 ${catalog.matchedCount} 部${
+                        catalog.fuzzy ? "（按相近剧名找到）" : ""
+                      }`
+                    : walk.running
+                    ? `正在建立片库索引 · 已收录 ${walk.total} 部`
+                    : catalogue.entries.length
+                    ? `片库共 ${catalogue.entries.length} 部${
+                        walk.gaps ? `，有 ${walk.gaps} 页没抓到` : ""
+                      }`
+                    : "片库索引还没建立，搜索只能用到站方的十条"}
+                </Text>
+                <Button
+                  label={
+                    walk.running
+                      ? "正在建立…"
+                      : catalogueComplete
+                      ? "更新索引"
+                      : "续建索引"
+                  }
+                  disabled={walk.running}
+                  onFocus={() => setFocusArea("content")}
+                  onPress={() => void startWalk(catalogueComplete)}
+                />
+              </View>
+            </>
           ) : tab === "排行榜" ? (
             <>
               <View style={s.heading}>
