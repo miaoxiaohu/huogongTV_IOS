@@ -56,6 +56,7 @@ import { focusTV } from "./src/ui/tv/compat";
 import { Player } from "./src/ui/Player";
 import { DetailTV } from "./src/ui/tv/DetailTV";
 import { GridHandle, GridPosition, TVGrid } from "./src/ui/tv/TVGrid";
+import { Shelf } from "./src/ui/tv/Shelf";
 import { tvInsets } from "./src/ui/tv/layout";
 type Tab = "推荐" | "搜索" | "排行榜" | "收藏" | "最近观看" | "设置";
 const tabs: Tab[] = ["推荐", "搜索", "排行榜", "收藏", "最近观看", "设置"];
@@ -87,6 +88,7 @@ export default function App() {
     progress: {},
     favoriteUpdates: {},
     searches: [],
+    later: [],
   });
   const libraryRef = useRef(library);
   const [tab, setTab] = useState<Tab>("推荐");
@@ -655,6 +657,26 @@ export default function App() {
         }))
       : catalog.items;
   const shelfLabel = category === "short" ? "真人剧" : "漫剧";
+  // The watch later list, the way the TV app keeps it.
+  const later = library.later;
+  // The shelves of the home page: what the user was watching, what grew, and
+  // what they set aside.
+  const resumeShelf = recent
+    .filter((p) => !p.completed)
+    .slice(0, 8)
+    .map((p) => p.series);
+  const updatedShelf = library.favorites
+    .filter(
+      (series) =>
+        addedEpisodes(
+          library.favoriteUpdates[series.id] || {
+            total: 0,
+            seen: 0,
+            checkedAt: 0,
+          }
+        ) > 0
+    )
+    .slice(0, 8);
   // The walk is done when every catalogue reached its final page.
   const catalogueComplete = catalogue.done.length >= CATALOGUE_ROUTES.length;
   return (
@@ -1000,6 +1022,31 @@ export default function App() {
               )}
             </View>
           )}
+          {tab === "推荐" ? (
+            <>
+              <Shelf
+                title="接着看"
+                items={resumeShelf}
+                onOpen={open}
+                onLongPress={setQuick}
+                onFocus={() => setFocusArea("content")}
+              />
+              <Shelf
+                title="收藏有更新"
+                items={updatedShelf}
+                onOpen={open}
+                onLongPress={setQuick}
+                onFocus={() => setFocusArea("content")}
+              />
+              <Shelf
+                title="稍后看"
+                items={later}
+                onOpen={open}
+                onLongPress={setQuick}
+                onFocus={() => setFocusArea("content")}
+              />
+            </>
+          ) : null}
           {
             <TVGrid
               key={
@@ -1074,6 +1121,23 @@ export default function App() {
                 }
                 onPress={() => {
                   favorite(quick);
+                  setQuick(null);
+                }}
+              />
+              <Button
+                label={
+                  library.later.some((i) => i.id === quick.id)
+                    ? "移出稍后看"
+                    : "加入稍后看"
+                }
+                onPress={() => {
+                  const target = quick;
+                  updateLibrary((old) => ({
+                    ...old,
+                    later: old.later.some((i) => i.id === target.id)
+                      ? old.later.filter((i) => i.id !== target.id)
+                      : [target, ...old.later],
+                  }));
                   setQuick(null);
                 }}
               />

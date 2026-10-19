@@ -9,6 +9,7 @@ const empty: Library = {
   progress: {},
   favoriteUpdates: {},
   searches: [],
+  later: [],
 };
 const CATALOGUE_KEY = "catalogue.v1";
 let pending = Promise.resolve();
@@ -72,6 +73,7 @@ export async function loadState(): Promise<{
         progress,
         favoriteUpdates: readUpdates(data.favoriteUpdates),
         searches: readSearches(data.searches),
+        later: readLater(data.later),
       };
     }
   } catch {}
@@ -106,6 +108,27 @@ function readUpdates(value: any): Record<string, FavoriteUpdate> {
     };
   }
   return updates;
+}
+
+/** Reads the shows that were set aside, dropping the broken ones. */
+function readLater(value: any): Series[] {
+  if (!Array.isArray(value)) return [];
+  const rows: Series[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    if (typeof raw.id !== "string" || !raw.id) continue;
+    if (typeof raw.title !== "string" || !raw.title) continue;
+    if (rows.some((row) => row.id === raw.id)) continue;
+    rows.push({
+      id: raw.id,
+      title: raw.title,
+      cover: typeof raw.cover === "string" ? raw.cover : "",
+      description: typeof raw.description === "string" ? raw.description : "",
+      badge: typeof raw.badge === "string" ? raw.badge : "",
+      tags: typeof raw.tags === "string" ? raw.tags : "",
+    });
+  }
+  return rows;
 }
 
 /**

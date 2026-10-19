@@ -40,6 +40,8 @@ export interface Library {
   favoriteUpdates: Record<string, FavoriteUpdate>;
   /** The searches the user made, newest first. */
   searches: RecentSearch[];
+  /** The shows the user set aside to watch later. */
+  later: Series[];
 }
 export interface Settings {
   baseUrl: string;

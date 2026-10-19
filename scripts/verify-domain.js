@@ -210,7 +210,7 @@ console.log("== reading the local records back ==");
                 },
                 "nothing stored gives the defaults"
             );
-            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length], [0, 0, 0, 0], "and an empty library");
+            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length, state.library.later.length], [0, 0, 0, 0, 0], "and an empty library");
         }
         {
             store.set(
@@ -258,7 +258,7 @@ console.log("== reading the local records back ==");
             store.set("library.v1", "{not json");
             const state = await storage.loadState();
             eq(state.settings.maxQuality, 540, "broken settings fall back to the defaults");
-            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length], [0, 0, 0, 0], "broken records fall back to an empty library");
+            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length, state.library.later.length], [0, 0, 0, 0, 0], "broken records fall back to an empty library");
         }
         {
             store.set("settings.v1", JSON.stringify({ maxQuality: 100, category: "nonsense" }));
@@ -269,12 +269,33 @@ console.log("== reading the local records back ==");
         {
             store.set("library.v1", JSON.stringify({ favorites: "not an array", progress: {} }));
             const state = await storage.loadState();
-            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length], [0, 0, 0, 0], "a library with broken favourites is ignored");
+            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length, state.library.later.length], [0, 0, 0, 0, 0], "a library with broken favourites is ignored");
         }
         {
             store.set("library.v1", JSON.stringify({ favorites: [], progress: [] }));
             const state = await storage.loadState();
-            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length], [0, 0, 0, 0], "a library with a broken progress map is ignored");
+            eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length, state.library.later.length], [0, 0, 0, 0, 0], "a library with a broken progress map is ignored");
+        }
+        {
+            store.set(
+                "library.v1",
+                JSON.stringify({
+                    favorites: [],
+                    progress: {},
+                    later: [
+                        { id: "1", title: "剧一", cover: "c", badge: "b", tags: "t" },
+                        { id: "1", title: "重复" },
+                        { id: "", title: "没有 id" },
+                        null,
+                    ],
+                })
+            );
+            const state = await storage.loadState();
+            eq(
+                state.library.later.map((row) => row.id),
+                ["1"],
+                "only the shows that can be read are set aside, and not twice"
+            );
         }
         {
             store.set(
