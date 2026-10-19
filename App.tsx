@@ -113,7 +113,7 @@ export default function App() {
   });
   // The quick actions, the way the TV app opens them on a long press.
   const [quick, setQuick] = useState<Series | null>(null);
-  const [autoPlay, setAutoPlay] = useState(false);
+  const autoPlayRef = useRef(false);
   // The favourites' update check.
   const [checking, setChecking] = useState(false);
   const [favoriteStatus, setFavoriteStatus] = useState("");
@@ -314,17 +314,31 @@ export default function App() {
   /** Plays a show from the quick actions, at the place it was left. */
   function playSeries(series: Series) {
     setQuick(null);
-    setAutoPlay(true);
-    setRestoreEpisode(undefined);
-    setError("");
-    setDetailId(series.id);
+    startShow(series);
   }
 
   /** Opens a show the user was watching and starts it where they left. */
   function resumeShow(series: Series) {
-    setAutoPlay(true);
+    startShow(series);
+  }
+
+  /**
+   * Opens a show and starts it by itself.
+   *
+   * The flag is a ref and not a state, because the detail effect does not
+   * run again when the same show is opened a second time - a state flag would
+   * stay armed and start the *next* show by itself.
+   */
+  function startShow(series: Series) {
     setRestoreEpisode(undefined);
     setError("");
+    const loaded = detail && detail.id === series.id ? detail : undefined;
+    if (loaded) {
+      const target = resumeTarget(loaded, libraryRef.current.progress[loaded.id]);
+      setPlay({ detail: loaded, index: target.index, position: target.position });
+      return;
+    }
+    autoPlayRef.current = true;
     setDetailId(series.id);
   }
 
@@ -378,15 +392,15 @@ export default function App() {
       .then((value) => {
         if (!live) return;
         setDetail(value);
-        // The user has seen this show, so its update is acknowledged: the
-        // badge would otherwise say "there are new episodes" for ever.
-        acknowledgeUpdate(value);
-        // The quick actions can ask for the show to start by itself.
-        if (autoPlay) {
-          setAutoPlay(false);
+        // The show asked to start by itself, so it starts.
+        if (autoPlayRef.current) {
+          autoPlayRef.current = false;
           const target = resumeTarget(value, libraryRef.current.progress[value.id]);
           setPlay({ detail: value, index: target.index, position: target.position });
         }
+        // The user has seen this show, so its update is acknowledged: the
+        // badge would otherwise say "there are new episodes" for ever.
+        acknowledgeUpdate(value);
         // The other seasons of the same show are looked up once the show
         // itself is known, and they are not worth an error of their own.
         setSeasonsState("loading");
