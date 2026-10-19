@@ -572,8 +572,20 @@ export default function App() {
 
   /** Runs a search that was remembered. */
   function runRemembered(entry: RecentSearch) {
+    setHistoryOpen(false);
     setQuery(entry.query);
-    setCategory(entry.type);
+    // The search belongs to a shelf, so the shelf has to change with it -
+    // the provider reads the setting, not the button on the settings page.
+    // Both changes go in together: two separate ones would ask the site
+    // twice, once with the old shelf and once with the new.
+    if (entry.type !== settings.category) {
+      const next = { ...settings, category: entry.type };
+      setSettings(next);
+      setCategory(entry.type);
+      void saveSettings(next).catch(() =>
+        setMessage("分类设置保存失败，请重试")
+      );
+    }
     setSubmitted(entry.query);
     setRestoreGrid(true);
     setSearchRun((n) => n + 1);
