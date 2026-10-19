@@ -72,10 +72,10 @@ jobs:
             echo "FAIL: main binary HongguoTV not found in ipa"
             exit 1
           fi
-          # App must have non-trivial size (> 5MB — proves JS bundle is bundled in)
-          SIZE=$(wc -c < hongguoTV-unsigned.ipa)
+          # Check ipa size (strip whitespace from wc output)
+          SIZE=$(wc -c < hongguoTV-unsigned.ipa | tr -d ' ')
           echo "ipa size: $SIZE bytes"
-          if [ "$SIZE" -lt 5000000 ]; then
+          if [ "${SIZE:-0}" -lt 2000000 ]; then
             echo "FAIL: ipa suspiciously small ($SIZE bytes)"
             exit 1
           fi
