@@ -412,12 +412,15 @@ export class ApiProvider implements ContentProvider {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), 20000);
     try {
+      // A ranged GET, not a HEAD: some servers answer HEAD with 405.
       const response = await fetch(url, {
-        method: "HEAD",
-        headers: { "User-Agent": VIDEO_HEADERS["User-Agent"] },
+        headers: {
+          "User-Agent": VIDEO_HEADERS["User-Agent"],
+          Range: "bytes=0-0",
+        },
         signal: abort.signal,
       });
-      if (!response.ok) throw new Error("该剧集暂无公开播放资源");
+      if (!response.ok) throw new Error("not found");
     } catch (error) {
       throw new Error("该剧集暂无公开播放资源");
     } finally {

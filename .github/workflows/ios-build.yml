@@ -28,6 +28,16 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Check the app sources
+        run: |
+          # A parse error or a type error here costs seconds; the same
+          # problem inside the xcodebuild costs eight minutes and a stack
+          # trace that points at Metro instead of at the broken file.
+          node scripts/check-sources.js
+          npx tsc --noEmit
+          node scripts/verify-signer.js
+          node scripts/verify-crypto.js
+
       - name: Pod install
         run: |
           cd ios
