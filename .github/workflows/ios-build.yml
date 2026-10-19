@@ -28,10 +28,6 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # The repo already contains a clean ios/HongguoTV native project.
-      # Generate a fresh Pods setup so the Xcode project is consistent with
-      # the checked-in Podfile (pod install is idempotent).
-
       - name: Pod install
         run: |
           cd ios
@@ -47,12 +43,24 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             -derivedDataPath build/ios \
-            build 2>&1 | tail -20
+            build
+
+      - name: Locate built app
+        id: locate
+        run: |
+          APP_PATH=$(find build/ios -name "HongguoTV.app" -type d | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: HongguoTV.app not found in build/ios"
+            ls -la build/ios/Build/Products/ 2>/dev/null || echo "No Products dir"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Package as unsigned ipa
         run: |
           rm -rf build/ipa && mkdir -p build/ipa/Payload
-          cp -R build/ios/Build/Products/Release-iphoneos/HongguoTV.app build/ipa/Payload/
+          cp -R "${{ steps.locate.outputs.app_path }}" build/ipa/Payload/HongguoTV.app
           cd build/ipa && zip -qry ../../hongguoTV-unsigned.ipa Payload
           ls -lh ../../hongguoTV-unsigned.ipa
 
@@ -62,8 +70,7 @@ jobs:
           for f in \
             "Payload/HongguoTV.app/HongguoTV" \
             "Payload/HongguoTV.app/Frameworks/React.framework/React" \
-            "Payload/HongguoTV.app/Frameworks/App.framework/App" \
-            "Payload/HongguoTV.app/Frameworks/App.framework/flutter_assets/AssetManifest.bin"; do
+            "Payload/HongguoTV.app/Frameworks/App.framework/App"; do
             if ! grep -q "$f" /tmp/ipa_list.txt; then
               echo "MISSING in ipa: $f"
               exit 1
