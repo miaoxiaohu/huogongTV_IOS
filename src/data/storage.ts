@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Library, Progress, Series, Settings } from "../domain/model";
 import { normalizeFrameMode, normalizeSpeed } from "./playback";
 import { CatalogueRoute, CatalogueSnapshot, emptySnapshot } from "./catalogue";
-const empty: Library = { favorites: [], progress: {} };
+import { FavoriteUpdate } from "./favorites";
+const empty: Library = { favorites: [], progress: {}, favoriteUpdates: {} };
 const CATALOGUE_KEY = "catalogue.v1";
 let pending = Promise.resolve();
 export async function loadState(): Promise<{
@@ -60,7 +61,7 @@ export async function loadState(): Promise<{
         if (typeof entry.position !== "number") continue;
         progress[id] = entry;
       }
-      library = { favorites: data.favorites, progress };
+      library = { favorites: data.favorites, progress, favoriteUpdates: readUpdates(data.favoriteUpdates) };
     }
   } catch {}
   return { settings, library };
@@ -75,6 +76,25 @@ export function saveLibrary(library: Library) {
 }
 export function saveSettings(settings: Settings) {
   return AsyncStorage.setItem("settings.v1", JSON.stringify(settings));
+}
+
+/** Reads the favourites' update records, dropping the ones that are broken. */
+function readUpdates(value: any): Record<string, FavoriteUpdate> {
+  const updates: Record<string, FavoriteUpdate> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return updates;
+  for (const [id, raw] of Object.entries(value)) {
+    const entry = raw as any;
+    if (!entry || typeof entry !== "object") continue;
+    if (typeof entry.total !== "number" || entry.total <= 0) continue;
+    if (typeof entry.seen !== "number" || entry.seen <= 0) continue;
+    if (typeof entry.checkedAt !== "number" || entry.checkedAt < 0) continue;
+    updates[id] = {
+      total: entry.total,
+      seen: entry.seen,
+      checkedAt: entry.checkedAt,
+    };
+  }
+  return updates;
 }
 
 /**

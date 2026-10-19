@@ -25,6 +25,7 @@ const SUITES = [
     ["playback settings", "verify-playback.js"],
     ["local catalogue", "verify-catalogue.js"],
     ["media cache", "verify-cache.js"],
+    ["favourite updates", "verify-favorites.js"],
 ];
 
 let failed = 0;

@@ -27,6 +27,12 @@ import {
 } from "./src/data/catalogue";
 import { buildCatalogue } from "./src/data/catalogueBuilder";
 import {
+  addedEpisodes,
+  firstFavoriteUpdate,
+  observeFavoriteUpdate,
+  shouldCheck,
+} from "./src/data/favorites";
+import {
   FRAME_MODES,
   PLAYBACK_SPEEDS,
   frameModeInfo,
@@ -78,6 +84,7 @@ export default function App() {
   const [library, setLibrary] = useState<Library>({
     favorites: [],
     progress: {},
+    favoriteUpdates: {},
   });
   const libraryRef = useRef(library);
   const [tab, setTab] = useState<Tab>("推荐");
@@ -102,6 +109,9 @@ export default function App() {
   // The quick actions, the way the TV app opens them on a long press.
   const [quick, setQuick] = useState<Series | null>(null);
   const [autoPlay, setAutoPlay] = useState(false);
+  // The favourites' update check.
+  const [checking, setChecking] = useState(false);
+  const [favoriteStatus, setFavoriteStatus] = useState("");
   const [play, setPlay] = useState<{
     detail: Detail;
     index: number;
@@ -477,7 +487,65 @@ export default function App() {
       favorites: old.favorites.some((i) => i.id === series.id)
         ? old.favorites.filter((i) => i.id !== series.id)
         : [series, ...old.favorites],
+      // A show that is no longer a favourite has no update to report.
+      favoriteUpdates:
+        old.favorites.some((i) => i.id === series.id)
+          ? Object.fromEntries(
+              Object.entries(old.favoriteUpdates).filter(
+                ([id]) => id !== series.id
+              )
+            )
+          : old.favoriteUpdates,
     }));
+  }
+
+  /**
+   * Looks at every favourite and remembers how many episodes it has.
+   *
+   * The site does not say "this show grew", the only sign is that the count
+   * went up. The requests are serial, because the endpoint that answers this
+   * app is sensitive about how often it is called, and a show that was
+   * looked at within the hour is left alone.
+   */
+  async function checkFavorites(force = false) {
+    if (checking) return;
+    const now = Date.now();
+    const due = library.favorites.filter(
+      (series) => shouldCheck(library.favoriteUpdates[series.id], now, force)
+    );
+    if (due.length === 0) {
+      setFavoriteStatus("收藏刚刚查过，没有新的集数");
+      return;
+    }
+    setChecking(true);
+    setFavoriteStatus(`正在检查 ${due.length} 部…`);
+    const updates = { ...library.favoriteUpdates };
+    let checked = 0;
+    for (const series of due) {
+      try {
+        const detail = await provider.detail(series.id);
+        const count = detail.episodes.length;
+        if (count > 0) {
+          const previous = updates[series.id];
+          updates[series.id] = previous
+            ? observeFavoriteUpdate(previous, count, now)
+            : firstFavoriteUpdate(count, now);
+        }
+      } catch {
+        // A show that cannot be reached is left as it was.
+      }
+      checked++;
+    }
+    updateLibrary((old) => ({ ...old, favoriteUpdates: updates }));
+    setChecking(false);
+    const withUpdates = Object.values(updates).filter(
+      (update) => addedEpisodes(update) > 0
+    ).length;
+    setFavoriteStatus(
+      withUpdates > 0
+        ? `已检查 ${checked} 部，${withUpdates} 部有更新`
+        : `已检查 ${checked} 部，没有更新`
+    );
   }
   function search() {
     positions.current["搜索"] = { index: 0 };
@@ -529,7 +597,17 @@ export default function App() {
   );
   const shown =
     tab === "收藏"
-      ? library.favorites
+      ? library.favorites.map((series) => {
+          const added = addedEpisodes(library.favoriteUpdates[series.id] || {
+            total: 0,
+            seen: 0,
+            checkedAt: 0,
+          });
+          return {
+            ...series,
+            badge: added > 0 ? `有 ${added} 集更新` : series.badge,
+          };
+        })
       : tab === "最近观看"
       ? recent.map((p) => ({
           ...p.series,
@@ -822,6 +900,23 @@ export default function App() {
                   : ranking.updatedText ||
                     `来源：红果${shelfLabel}热播榜`}
               </Text>
+            </>
+          ) : tab === "收藏" ? (
+            <>
+              <View style={s.heading}>
+                <Text style={s.section}>我的收藏</Text>
+                <Button
+                  label={checking ? "正在检查…" : "检查更新"}
+                  disabled={checking || library.favorites.length === 0}
+                  onFocus={() => setFocusArea("content")}
+                  onPress={() => void checkFavorites(true)}
+                />
+              </View>
+              {favoriteStatus ? (
+                <Text style={[s.muted, { marginBottom: 8 }]}>
+                  {favoriteStatus}
+                </Text>
+              ) : null}
             </>
           ) : (
             <View style={s.heading}>

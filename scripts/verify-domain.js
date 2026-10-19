@@ -210,7 +210,7 @@ console.log("== reading the local records back ==");
                 },
                 "nothing stored gives the defaults"
             );
-            eq(state.library, { favorites: [], progress: {} }, "and an empty library");
+            eq(state.library, { favorites: [], progress: {}, favoriteUpdates: {} }, "and an empty library");
         }
         {
             store.set(
@@ -258,7 +258,7 @@ console.log("== reading the local records back ==");
             store.set("library.v1", "{not json");
             const state = await storage.loadState();
             eq(state.settings.maxQuality, 540, "broken settings fall back to the defaults");
-            eq(state.library, { favorites: [], progress: {} }, "broken records fall back to an empty library");
+            eq(state.library, { favorites: [], progress: {}, favoriteUpdates: {} }, "broken records fall back to an empty library");
         }
         {
             store.set("settings.v1", JSON.stringify({ maxQuality: 100, category: "nonsense" }));
@@ -269,12 +269,33 @@ console.log("== reading the local records back ==");
         {
             store.set("library.v1", JSON.stringify({ favorites: "not an array", progress: {} }));
             const state = await storage.loadState();
-            eq(state.library, { favorites: [], progress: {} }, "a library with broken favourites is ignored");
+            eq(state.library, { favorites: [], progress: {}, favoriteUpdates: {} }, "a library with broken favourites is ignored");
         }
         {
             store.set("library.v1", JSON.stringify({ favorites: [], progress: [] }));
             const state = await storage.loadState();
-            eq(state.library, { favorites: [], progress: {} }, "a library with a broken progress map is ignored");
+            eq(state.library, { favorites: [], progress: {}, favoriteUpdates: {} }, "a library with a broken progress map is ignored");
+        }
+        {
+            store.set(
+                "library.v1",
+                JSON.stringify({
+                    favorites: [],
+                    progress: {},
+                    favoriteUpdates: {
+                        good: { total: 86, seen: 86, checkedAt: 1000 },
+                        noTotal: { seen: 86, checkedAt: 1000 },
+                        zeroTotal: { total: 0, seen: 0, checkedAt: 0 },
+                        broken: "nonsense",
+                    },
+                })
+            );
+            const state = await storage.loadState();
+            eq(
+                Object.keys(state.library.favoriteUpdates),
+                ["good"],
+                "only the update records that can be read are kept"
+            );
         }
         {
             // A record that is not a record would crash the list later, so

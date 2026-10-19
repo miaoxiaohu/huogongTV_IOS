@@ -461,6 +461,30 @@ function renditionList(captured) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== the favourites' update check ==");
+    {
+        const {
+            firstFavoriteUpdate,
+            observeFavoriteUpdate,
+            addedEpisodes,
+        } = require(path.join(cache, "data/favorites.js"));
+        // A real show, fetched twice: the count must not move, and nothing
+        // may be reported as new.
+        const detail = await provider.detail("7685265188223732761");
+        const count = detail.episodes.length;
+        count > 0 ? ok("the show has " + count + " episodes") : fail("no episodes");
+        const first = firstFavoriteUpdate(count, Date.now());
+        const again = observeFavoriteUpdate(first, count, Date.now() + 1000);
+        addedEpisodes(again) === 0
+            ? ok("a show that did not grow reports no update")
+            : fail("a show that did not grow reports an update");
+        const grown = observeFavoriteUpdate(first, count + 3, Date.now() + 2000);
+        addedEpisodes(grown) === 3
+            ? ok("a show that grew reports three new episodes")
+            : fail("a grown show reports " + addedEpisodes(grown));
+    }
+
+    // -----------------------------------------------------------------------
     if (FULL) {
         console.log("== the whole pipeline, end to end ==");
         // Three episodes: the first one, the one whose renditions are mostly

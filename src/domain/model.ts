@@ -1,5 +1,6 @@
 import { FrameMode } from "../data/playback";
 import { CatalogueRoute } from "../data/catalogue";
+import { FavoriteUpdate } from "../data/favorites";
 
 export interface Series {
   id: string;
@@ -34,6 +35,8 @@ export interface Progress {
 export interface Library {
   favorites: Series[];
   progress: Record<string, Progress>;
+  /** What is known about the favourites' episode counts. */
+  favoriteUpdates: Record<string, FavoriteUpdate>;
 }
 export interface Settings {
   baseUrl: string;
