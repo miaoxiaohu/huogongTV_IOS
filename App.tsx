@@ -37,12 +37,10 @@ import {
   shouldCheck,
 } from "./src/data/favorites";
 import { rememberSearch, RecentSearch } from "./src/data/searchHistory";
-import { clearHistory, clearSearches, removeHistory } from "./src/data/history";
 import { licenseNotice } from "./src/data/licenses";
 import {
   BackupData,
   decodeBackup,
-  describeBackup,
   encodeBackup,
   mergeBackup,
   settingsFromBackup,
@@ -74,7 +72,12 @@ import {
   resumeTarget,
 } from "./src/domain/model";
 import { Button, Check, Notice, palette } from "./src/ui/components";
-import { Confirm, ConfirmRequest } from "./src/ui/Confirm";
+import { Confirm } from "./src/ui/Confirm";
+import {
+  applyPendingToLibrary,
+  Pending,
+  pendingRestoresSettings,
+} from "./src/ui/confirmations";
 import { Info } from "./src/ui/Info";
 import { focusTV } from "./src/ui/tv/compat";
 import { Player } from "./src/ui/Player";
@@ -85,18 +88,6 @@ import { tvInsets } from "./src/ui/tv/layout";
 type Tab = "推荐" | "搜索" | "排行榜" | "收藏" | "最近观看" | "设置";
 const tabs: Tab[] = ["推荐", "搜索", "排行榜", "收藏", "最近观看", "设置"];
 
-/**
- * Something the user has to agree to before it happens.
- *
- * It is kept as data and not as a ready-made dialog, so the dialog always
- * reads the current state - a checkbox that was ticked is seen by the action
- * that runs when the button is pressed.
- */
-type Pending =
-  | { kind: "remove-record"; id: string; title: string }
-  | { kind: "clear-searches" }
-  | { kind: "clear-history" }
-  | { kind: "restore"; backup: BackupData; name: string; withSettings: boolean };
 const sample: Detail = {
   id: "test",
   title: "播放器测试 · Big Buck Bunny",
@@ -385,11 +376,6 @@ export default function App() {
     }));
   }
 
-  /** Deletes the watching record of a show. The favourite stays. */
-  function removeProgress(id: string) {
-    updateLibrary((old) => removeHistory(old, id));
-  }
-
   /**
    * Writes the local records into a file the user can keep.
    *
@@ -624,6 +610,17 @@ export default function App() {
   useEffect(() => {
     if (play) return;
     const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      // A dialog is the thing on the screen, so it goes first. The modal
+      // takes the press on its own, but a dialog that stays open while the
+      // app walks back out of the screen would be a bad surprise.
+      if (pending) {
+        setPending(null);
+        return true;
+      }
+      if (info) {
+        setInfo(null);
+        return true;
+      }
       if (detailId) {
         closeDetail();
         return true;
@@ -644,7 +641,7 @@ export default function App() {
       return false;
     });
     return () => listener.remove();
-  }, [detailId, tab, settings.baseUrl, play, focusArea]);
+  }, [detailId, tab, settings.baseUrl, play, focusArea, pending, info]);
   function open(item: Series) {
     setRestoreEpisode(undefined);
     setError("");
@@ -932,60 +929,39 @@ export default function App() {
   // The walk is done when every catalogue reached its final page.
   const catalogueComplete = catalogue.done.length >= CATALOGUE_ROUTES.length;
   /**
-   * The dialog for whatever the user has to agree to.
+   * Does what the user agreed to.
    *
-   * It is built here and not stored, so the action always sees the state as
-   * it is when the button is pressed - the checkbox in the restore preview
-   * included.
+   * The action is read from the request at the moment the button is pressed,
+   * so the box in the restore preview is seen.
    */
-  const confirmRequest: ConfirmRequest | null = !pending
-    ? null
-    : pending.kind === "remove-record"
-    ? {
-        title: "删除观看记录",
-        body: `删除《${pending.title}》的本机观看进度？收藏会保留。`,
-        onOk: () => {
-          removeProgress(pending.id);
-          setPending(null);
-        },
-      }
-    : pending.kind === "clear-searches"
-    ? {
-        title: "清空搜索历史",
-        body: "清除本机保存的搜索词？",
-        onOk: () => {
-          updateLibrary(clearSearches);
-          setPending(null);
-        },
-      }
-    : pending.kind === "clear-history"
-    ? {
-        title: "清空观看记录",
-        body: "将删除本机所有观看进度，收藏会保留。",
-        onOk: () => {
-          updateLibrary(clearHistory);
-          setPending(null);
-        },
-      }
-    : {
-        title: "确认恢复本机记录",
-        body: describeBackup(pending.backup),
-        okLabel: "合并恢复",
-        extra: (
-          <Check
-            label="同时恢复播放设置和内容分类"
-            checked={pending.withSettings}
-            onToggle={() =>
-              setPending({ ...pending, withSettings: !pending.withSettings })
-            }
-          />
-        ),
-        onOk: () => {
-          const { backup, withSettings } = pending;
-          setPending(null);
-          void applyBackup(backup, withSettings);
-        },
-      };
+  function handlePending(action: Pending) {
+    if (action.kind === "restore") {
+      const backup = action.backup;
+      const withSettings = pendingRestoresSettings(action);
+      setPending(null);
+      void applyBackup(backup, withSettings);
+      return;
+    }
+    updateLibrary((old) => applyPendingToLibrary(action, old));
+    setPending(null);
+  }
+
+  /**
+   * The extra line in the dialog - the box that says the playback settings
+   * and the shelf come back too.
+   */
+  function pendingExtra(action: Pending) {
+    if (action.kind !== "restore") return null;
+    return (
+      <Check
+        label="同时恢复播放设置和内容分类"
+        checked={action.withSettings}
+        onToggle={() =>
+          setPending({ ...action, withSettings: !action.withSettings })
+        }
+      />
+    );
+  }
   return (
     <View
       style={[
@@ -1604,8 +1580,10 @@ export default function App() {
         </View>
       ) : null}
       <Confirm
-        request={confirmRequest}
+        pending={pending}
         onClose={() => setPending(null)}
+        onOk={handlePending}
+        extra={pendingExtra}
       />
       <Info
         title={info?.title || ""}

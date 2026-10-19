@@ -194,11 +194,25 @@ console.log("== putting a backup back ==");
         "the watch later list is merged"
     );
     eq(merged.hidden, ["3", "4"], "the hidden shows are merged");
-    eq(settingsFromBackup(incoming.settings).maxQuality, 1080, "the settings can come back too");
     eq(
-        settingsFromBackup(incoming.settings).maxQuality,
-        1080,
-        "and the app can keep its own"
+        settingsFromBackup(incoming.settings),
+        {
+            maxQuality: 1080,
+            playbackSpeed: 1,
+            autoNext: true,
+            category: "short",
+            frameMode: "fit",
+        },
+        "the settings can come back too"
+    );
+    // Whether they come back at all is the caller's decision, and it is
+    // checked where it is made: `pendingRestoresSettings` in
+    // verify-history.js. A restore that was not asked for leaves the local
+    // settings alone, so the merge itself never touches them.
+    eq(
+        Object.prototype.hasOwnProperty.call(merged, "settings"),
+        false,
+        "and the merge leaves the settings out of it"
     );
 }
 

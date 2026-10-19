@@ -25,7 +25,7 @@ export function Info({
             onRequestClose={onClose}
             supportedOrientations={["portrait", "landscape"]}
         >
-            <View style={s.backdrop}>
+            <View accessibilityViewIsModal style={s.backdrop}>
                 <View style={s.panel}>
                     <Text style={s.title}>{title}</Text>
                     <ScrollView style={s.body}>

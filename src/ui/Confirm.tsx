@@ -1,88 +1,93 @@
 import React, { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button, palette } from "./components";
-
-/** What a confirmation is about. */
-export interface ConfirmRequest {
-    /** The headline, e.g. "删除观看记录". */
-    title: string;
-    /** The line under it, e.g. what is about to change. */
-    body: string;
-    /** The label of the button that goes ahead. */
-    okLabel?: string;
-    /** The label of the button that backs out. */
-    cancelLabel?: string;
-    /** Runs when the user goes ahead. */
-    onOk: () => void;
-    /** An extra line under the body. */
-    note?: string;
-    /** Something the user can tick, e.g. "also restore the settings". */
-    extra?: React.ReactNode;
-}
+import { Pending, confirmWords } from "./confirmations";
+import { TVFocusGuideView } from "./tv/compat";
 
 /**
  * Asks before something is done that cannot be undone.
  *
- * The cancel button is the one that gets the focus first, so a remote control
- * that sends a stray "OK" does not throw the records away. The same rule as
- * the TV app's dialogs.
+ * The dialog is mounted only while there is something to ask about, and it
+ * keeps the "already done" flag per request: a new request is a new dialog,
+ * so its buttons are usable again.
+ *
+ * The cancel button comes first, so the one that is read first is the one
+ * that backs out. The `preferred` flag on it is a tvOS thing - on a phone it
+ * does nothing, and the order of the buttons is what carries the meaning.
  */
 export function Confirm({
-    request,
+    pending,
     onClose,
+    onOk,
+    extra,
 }: {
-    request: ConfirmRequest | null;
+    /** What the user has to agree to, or null when there is nothing to ask. */
+    pending: Pending | null;
     onClose: () => void;
+    onOk: (pending: Pending) => void;
+    /** Something the user can tick, e.g. "also restore the settings". */
+    extra?: (pending: Pending) => React.ReactNode;
 }) {
-    const [busy, setBusy] = useState(false);
-    if (!request) return null;
-    const close = () => {
-        setBusy(false);
-        onClose();
-    };
+    const [done, setDone] = useState<Pending | null>(null);
+    const [failure, setFailure] = useState<{ pending: Pending; text: string } | null>(
+        null
+    );
+    // Both of these are derived from the request and not stored beside it: a
+    // new request is a new dialog, so it can never inherit the "already
+    // done" flag of the one before it.
+    const busy = !!pending && done === pending;
+    const error = failure && pending && failure.pending === pending ? failure.text : "";
+    if (!pending) return null;
+    const words = confirmWords(pending);
     return (
         <Modal
             visible
             transparent
             animationType="fade"
-            onRequestClose={close}
+            onRequestClose={onClose}
             supportedOrientations={["portrait", "landscape"]}
         >
-            <View style={s.backdrop}>
+            <View accessibilityViewIsModal style={s.backdrop}>
                 <View style={s.panel}>
-                    <Text style={s.title}>{request.title}</Text>
+                    <Text style={s.title}>{words.title}</Text>
                     <ScrollView style={s.body}>
-                        <Text style={s.bodyText}>{request.body}</Text>
-                        {request.note ? (
-                            <Text style={s.note}>{request.note}</Text>
-                        ) : null}
-                        {request.extra}
+                        <Text style={s.bodyText}>{words.body}</Text>
+                        {extra ? extra(pending) : null}
                     </ScrollView>
-                    <View style={s.actions}>
+                    {error ? <Text style={s.error}>{error}</Text> : null}
+                    <TVFocusGuideView style={s.actions}>
                         <Button
-                            label={request.cancelLabel || "取消"}
+                            label="取消"
                             preferred
                             disabled={busy}
-                            onPress={close}
+                            onPress={onClose}
                         />
                         <Button
-                            label={request.okLabel || "确定"}
+                            label={words.okLabel}
                             primary
                             disabled={busy}
                             onPress={() => {
-                                setBusy(true);
+                                setDone(pending);
+                                setFailure(null);
                                 try {
-                                    request.onOk();
-                                } catch (error) {
-                                    // The dialog stays open, and the button works
-                                    // again - a throw must not leave the user
-                                    // with a dead dialog.
-                                    setBusy(false);
-                                    throw error;
+                                    onOk(pending);
+                                } catch (problem) {
+                                    // The dialog stays open and the button works
+                                    // again. The failure is shown here instead
+                                    // of being thrown into the void, where it
+                                    // would take the app down with it.
+                                    setDone(null);
+                                    setFailure({
+                                        pending,
+                                        text:
+                                            problem instanceof Error
+                                                ? problem.message
+                                                : "这一步没能做完，请再试一次",
+                                    });
                                 }
                             }}
                         />
-                    </View>
+                    </TVFocusGuideView>
                 </View>
             </View>
         </Modal>
@@ -111,6 +116,6 @@ const s = StyleSheet.create({
     title: { color: palette.text, fontSize: 24, fontWeight: "700" },
     body: { maxHeight: 320 },
     bodyText: { color: palette.text, fontSize: 17, lineHeight: 26 },
-    note: { color: palette.muted, fontSize: 15, lineHeight: 23, marginTop: 12 },
+    error: { color: palette.accent, fontSize: 15, lineHeight: 22 },
     actions: { flexDirection: "row", gap: 12, justifyContent: "flex-end" },
 });

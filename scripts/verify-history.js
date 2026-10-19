@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * The watching records, the backup preview and the licenses.
+ * The watching records, the confirmations, the backup preview and the licenses.
  *
- * Three things that are easy to get wrong and hard to see:
+ * Four things that are easy to get wrong and hard to see:
  *
  * - a record that is deleted has to take its "watched through" mark with it,
  *   or the show comes back looking finished;
+ * - every action that throws records away has to ask first, and the dialog
+ *   has to be usable again the next time it opens;
  * - the preview of a backup has to count the backup and not the device, or it
  *   describes the wrong thing;
  * - every library the app ships with has to be named in the licenses, or the
@@ -25,6 +27,11 @@ const { licenseNotice, LICENSES, APP_LICENSE, REPOSITORY } = require(path.join(
     cache,
     "data/licenses.js"
 ));
+const {
+    confirmWords,
+    applyPendingToLibrary,
+    pendingRestoresSettings,
+} = require(path.join(cache, "ui/confirmations.js"));
 
 let failures = 0;
 const ok = (m) => console.log("  ok   " + m);
@@ -152,6 +159,150 @@ console.log("== the preview of a backup counts the backup ==");
     has(empty, "0 条观看记录", "for the records too");
 }
 
+console.log("== every action that throws records away asks first ==");
+{
+    const pending = {
+        "remove-record": { kind: "remove-record", id: "2", title: "收藏二" },
+        "clear-searches": { kind: "clear-searches" },
+        "clear-history": { kind: "clear-history" },
+    };
+    // The words are the TV app's: the same title, the same sentence.
+    eq(
+        confirmWords(pending["remove-record"]),
+        {
+            title: "删除观看记录",
+            body: "删除《收藏二》的本机观看进度？收藏会保留。",
+            okLabel: "确定",
+        },
+        "deleting a record says what is going to happen"
+    );
+    eq(
+        confirmWords(pending["clear-searches"]),
+        {
+            title: "清空搜索历史",
+            body: "清除本机保存的搜索词？",
+            okLabel: "确定",
+        },
+        "clearing the search words says so too"
+    );
+    eq(
+        confirmWords(pending["clear-history"]),
+        {
+            title: "清空观看记录",
+            body: "将删除本机所有观看进度，收藏会保留。",
+            okLabel: "确定",
+        },
+        "and clearing every record says what is kept"
+    );
+
+    // And each of them does what it says.
+    const after = applyPendingToLibrary(pending["remove-record"], library());
+    eq(Object.keys(after.progress), ["1"], "the record is gone");
+    eq(after.watched, ["1"], "and so is its mark");
+    eq(after.favorites.length, 1, "the favourite stays");
+    eq(
+        applyPendingToLibrary(pending["clear-searches"], library()).searches,
+        [],
+        "the search words are gone"
+    );
+    eq(
+        Object.keys(applyPendingToLibrary(pending["clear-history"], library()).progress),
+        [],
+        "every record is gone"
+    );
+    eq(
+        applyPendingToLibrary(pending["clear-history"], library()).favorites.length,
+        1,
+        "and the favourite is still there"
+    );
+
+    // The settings come back only when the box was ticked.
+    const backup = {
+        favorites: [],
+        history: [],
+        watched: [],
+        searches: [],
+        later: [],
+        hidden: [],
+        settings: {
+            quality: 1080,
+            speed: 2,
+            autoNext: false,
+            type: "comic",
+            frame: "zoom",
+        },
+    };
+    eq(
+        pendingRestoresSettings({ kind: "restore", backup, name: "b", withSettings: false }),
+        false,
+        "a restore leaves the settings alone by default"
+    );
+    eq(
+        pendingRestoresSettings({ kind: "restore", backup, name: "b", withSettings: true }),
+        true,
+        "and brings them back when the box is ticked"
+    );
+    eq(
+        pendingRestoresSettings(pending["clear-history"]),
+        false,
+        "nothing else carries the settings"
+    );
+    eq(
+        confirmWords({ kind: "restore", backup, name: "b", withSettings: false }).okLabel,
+        "合并恢复",
+        "the restore says it merges"
+    );
+}
+
+console.log("== the dialog is usable again the next time it opens ==");
+{
+    const shim = require("./fixtures/react-shim");
+    shim.reset();
+    shim.install(cache);
+    const { Confirm } = require(path.join(cache, "ui/Confirm.js"));
+
+    let okCalls = 0;
+    const dialog = (pending) =>
+        shim.jsx(Confirm, {
+            pending,
+            onClose: () => {},
+            onOk: () => {
+                okCalls++;
+            },
+        });
+
+    const first = { kind: "clear-searches" };
+    let tree = shim.render(dialog(first));
+    let found = shim.buttons(tree);
+    eq(found.length, 2, "the dialog has two buttons");
+    eq(
+        found.map((b) => b.props.disabled),
+        [false, false],
+        "and both of them work"
+    );
+    // The user presses the one that goes ahead.
+    const go = found.find((b) => b.props.accessibilityLabel === "确定");
+    go.props.onPress();
+    eq(okCalls, 1, "the action ran");
+    tree = shim.render(dialog(first));
+    found = shim.buttons(tree);
+    eq(
+        found.map((b) => b.props.disabled),
+        [true, true],
+        "and the buttons stop working, so a second tap cannot do it twice"
+    );
+    // The dialog closes and something else opens it.
+    tree = shim.render(dialog(null));
+    eq(shim.buttons(tree).length, 0, "the dialog is gone");
+    tree = shim.render(dialog({ kind: "clear-history" }));
+    found = shim.buttons(tree);
+    eq(
+        found.map((b) => b.props.disabled),
+        [false, false],
+        "and the next one works - a new dialog never inherits the last one's state"
+    );
+}
+
 console.log("== the licenses name every library that is shipped ==");
 {
     const pkg = require(path.join(ROOT, "package.json"));
@@ -159,12 +310,42 @@ console.log("== the licenses name every library that is shipped ==");
     eq(shipped.length > 0, true, "the app has dependencies");
     for (const name of shipped) {
         const entry = LICENSES.find((row) => row.name === name);
-        if (!entry) fail("the library " + name + " is not named in the licenses");
-        else ok("the library " + name + " is named (" + entry.license + ")");
+        if (!entry) {
+            fail("the library " + name + " is not named in the licenses");
+            continue;
+        }
+        ok("the library " + name + " is named (" + entry.license + ")");
+        // The terms have to be the ones the package really is under, not just
+        // something that is written down.
+        let installed = null;
+        try {
+            installed = require(path.join(
+                ROOT,
+                "node_modules",
+                name,
+                "package.json"
+            ));
+        } catch (error) {
+            fail("the library " + name + " is not installed");
+            continue;
+        }
+        const terms =
+            installed.license ||
+            (installed.licenses && installed.licenses[0] &&
+                (installed.licenses[0].type || installed.licenses[0])) ||
+            "";
+        eq(
+            entry.license,
+            terms,
+            "the terms of " + name + " are the ones the package really has"
+        );
     }
     for (const entry of LICENSES) {
         if (!entry.license || !entry.license.trim()) {
             fail("the library " + entry.name + " has no license");
+        }
+        if (!shipped.includes(entry.name)) {
+            fail("the license list names " + entry.name + ", which is not a dependency");
         }
     }
     const text = licenseNotice();
