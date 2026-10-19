@@ -7,10 +7,13 @@ import { TVFocusGuideView } from "./compat";
 /**
  * One shelf: a row of shows under a heading.
  *
- * The TV app's home page is nothing but shelves, and the d-pad moves along a
- * shelf and then down to the next one. Here the shelves sit above the grid,
- * so the same rhythm works: left and right along the shelf, down into the
- * grid.
+ * The TV app's home page is nothing but shelves. Here they sit at the top of
+ * the grid and scroll away with it, so the grid keeps the whole screen and
+ * the page reads the same way as the TV's.
+ *
+ * The focus guide is inert on this build - the app is an iOS app, and
+ * react-native has no TV focus guide - but it is there for the day it
+ * becomes a tvOS one.
  */
 export function Shelf({
   title,

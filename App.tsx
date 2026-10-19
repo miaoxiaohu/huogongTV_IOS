@@ -28,6 +28,7 @@ import {
 import { buildCatalogue } from "./src/data/catalogueBuilder";
 import {
   addedEpisodes,
+  FavoriteUpdate,
   firstFavoriteUpdate,
   observeFavoriteUpdate,
   shouldCheck,
@@ -318,6 +319,34 @@ export default function App() {
     setError("");
     setDetailId(series.id);
   }
+
+  /** Opens a show the user was watching and starts it where they left. */
+  function resumeShow(series: Series) {
+    setAutoPlay(true);
+    setRestoreEpisode(undefined);
+    setError("");
+    setDetailId(series.id);
+  }
+
+  /**
+   * Marks a favourite's new episodes as seen.
+   *
+   * The badge would otherwise say 「有 N 集更新」 for ever: the count only
+   * grows, and nothing ever moved the mark up.
+   */
+  function acknowledgeUpdate(detail: Detail) {
+    const count = detail.episodes.length;
+    if (count <= 0) return;
+    const previous = library.favoriteUpdates[detail.id];
+    if (!previous) return;
+    updateLibrary((old) => ({
+      ...old,
+      favoriteUpdates: {
+        ...old.favoriteUpdates,
+        [detail.id]: observeFavoriteUpdate(previous, count, Date.now(), true),
+      },
+    }));
+  }
   const updateLibrary = useCallback((update: (old: Library) => Library) => {
     const next = update(libraryRef.current);
     libraryRef.current = next;
@@ -349,6 +378,9 @@ export default function App() {
       .then((value) => {
         if (!live) return;
         setDetail(value);
+        // The user has seen this show, so its update is acknowledged: the
+        // badge would otherwise say "there are new episodes" for ever.
+        acknowledgeUpdate(value);
         // The quick actions can ask for the show to start by itself.
         if (autoPlay) {
           setAutoPlay(false);
@@ -525,32 +557,47 @@ export default function App() {
     }
     setChecking(true);
     setFavoriteStatus(`正在检查 ${due.length} 部…`);
-    const updates = { ...library.favoriteUpdates };
-    let checked = 0;
+    const observed: Record<string, FavoriteUpdate> = {};
+    let done = 0;
+    let failed = 0;
     for (const series of due) {
       try {
         const detail = await provider.detail(series.id);
         const count = detail.episodes.length;
         if (count > 0) {
-          const previous = updates[series.id];
-          updates[series.id] = previous
+          const previous = library.favoriteUpdates[series.id];
+          observed[series.id] = previous
             ? observeFavoriteUpdate(previous, count, now)
             : firstFavoriteUpdate(count, now);
         }
+        done++;
       } catch {
         // A show that cannot be reached is left as it was.
+        failed++;
       }
-      checked++;
     }
-    updateLibrary((old) => ({ ...old, favoriteUpdates: updates }));
+    // Only the shows that were looked at are written back, and only the ones
+    // that are still favourites: the user may have un-favourited something
+    // while the check was running.
+    updateLibrary((old) => {
+      const favoriteIds = new Set(old.favorites.map((s) => s.id));
+      const merged = { ...old.favoriteUpdates };
+      for (const [id, update] of Object.entries(observed)) {
+        if (favoriteIds.has(id)) merged[id] = update;
+      }
+      return { ...old, favoriteUpdates: merged };
+    });
     setChecking(false);
-    const withUpdates = Object.values(updates).filter(
-      (update) => addedEpisodes(update) > 0
+    const withUpdates = Object.entries(observed).filter(
+      ([id, update]) =>
+        library.favorites.some((s) => s.id === id) && addedEpisodes(update) > 0
     ).length;
     setFavoriteStatus(
-      withUpdates > 0
-        ? `已检查 ${checked} 部，${withUpdates} 部有更新`
-        : `已检查 ${checked} 部，没有更新`
+      failed > 0
+        ? `已检查 ${done}/${due.length} 部，${failed} 部失败，可再试一次`
+        : withUpdates > 0
+        ? `已检查 ${done} 部，${withUpdates} 部有更新`
+        : `已检查 ${done} 部，没有更新`
     );
   }
   function search() {
@@ -580,17 +627,20 @@ export default function App() {
     // the provider reads the setting, not the button on the settings page.
     // Both changes go in together: two separate ones would ask the site
     // twice, once with the old shelf and once with the new.
+    const next = { ...settings, category: entry.type };
+    setSettings(next);
+    setCategory(entry.type);
     if (entry.type !== settings.category) {
-      const next = { ...settings, category: entry.type };
-      setSettings(next);
-      setCategory(entry.type);
       void saveSettings(next).catch(() =>
         setMessage("分类设置保存失败，请重试")
       );
     }
+    // The grid starts at the top, the same way a typed search does.
+    positions.current["搜索"] = { index: 0 };
     setSubmitted(entry.query);
     setRestoreGrid(true);
     setSearchRun((n) => n + 1);
+    if (submitted === entry.query) void catalog.refresh();
   }
   if (!ready)
     return (
@@ -661,10 +711,15 @@ export default function App() {
   const later = library.later;
   // The shelves of the home page: what the user was watching, what grew, and
   // what they set aside.
-  const resumeShelf = recent
-    .filter((p) => !p.completed)
-    .slice(0, 8)
-    .map((p) => p.series);
+  //
+  // A finished episode is not filtered out: the app resumes at the next one,
+  // so the show is exactly the one the user wants back.
+  const resumeShelf = recent.slice(0, 8).map((p) => ({
+    ...p.series,
+    badge: `第 ${p.episodeNumber} 集 · ${
+      p.completed ? "接着看下一集" : `${Math.floor(p.position / 60)} 分钟`
+    }`,
+  }));
   const updatedShelf = library.favorites
     .filter(
       (series) =>
@@ -915,7 +970,11 @@ export default function App() {
                 />
               </View>
               {historyOpen ? (
-                <View style={s.history}>
+                <ScrollView
+                  style={s.historyScroll}
+                  contentContainerStyle={s.history}
+                  keyboardShouldPersistTaps="handled"
+                >
                   {library.searches.length === 0 ? (
                     <Text style={s.muted}>
                       搜索过的剧名会保存在这里，最多 20 条。
@@ -923,10 +982,11 @@ export default function App() {
                   ) : (
                     <>
                       <View style={s.row}>
-                        {library.searches.slice(0, 10).map((entry) => (
+                        {library.searches.map((entry) => (
                           <Button
                             key={`${entry.type}:${entry.query}`}
                             label={`${entry.type === "comic" ? "漫剧" : "真人剧"} · ${entry.query}`}
+                            onFocus={() => setFocusArea("content")}
                             onPress={() => {
                               setHistoryOpen(false);
                               runRemembered(entry);
@@ -936,13 +996,14 @@ export default function App() {
                       </View>
                       <Button
                         label="清空历史"
+                        onFocus={() => setFocusArea("content")}
                         onPress={() =>
                           updateLibrary((old) => ({ ...old, searches: [] }))
                         }
                       />
                     </>
                   )}
-                </View>
+                </ScrollView>
               ) : null}
               <View style={s.heading}>
                 <Text style={s.muted}>
@@ -1022,31 +1083,6 @@ export default function App() {
               )}
             </View>
           )}
-          {tab === "推荐" ? (
-            <>
-              <Shelf
-                title="接着看"
-                items={resumeShelf}
-                onOpen={open}
-                onLongPress={setQuick}
-                onFocus={() => setFocusArea("content")}
-              />
-              <Shelf
-                title="收藏有更新"
-                items={updatedShelf}
-                onOpen={open}
-                onLongPress={setQuick}
-                onFocus={() => setFocusArea("content")}
-              />
-              <Shelf
-                title="稍后看"
-                items={later}
-                onOpen={open}
-                onLongPress={setQuick}
-                onFocus={() => setFocusArea("content")}
-              />
-            </>
-          ) : null}
           {
             <TVGrid
               key={
@@ -1082,6 +1118,33 @@ export default function App() {
                   : undefined
               }
               positions={tab === "排行榜" ? ranking.positions : undefined}
+              header={
+                tab === "推荐" ? (
+                  <>
+                    <Shelf
+                      title="接着看"
+                      items={resumeShelf}
+                      onOpen={resumeShow}
+                      onLongPress={setQuick}
+                      onFocus={() => setFocusArea("content")}
+                    />
+                    <Shelf
+                      title="收藏有更新"
+                      items={updatedShelf}
+                      onOpen={open}
+                      onLongPress={setQuick}
+                      onFocus={() => setFocusArea("content")}
+                    />
+                    <Shelf
+                      title="稍后看"
+                      items={later}
+                      onOpen={open}
+                      onLongPress={setQuick}
+                      onFocus={() => setFocusArea("content")}
+                    />
+                  </>
+                ) : null
+              }
               empty={
                 tab === "搜索"
                   ? submitted
@@ -1134,9 +1197,11 @@ export default function App() {
                   const target = quick;
                   updateLibrary((old) => ({
                     ...old,
-                    later: old.later.some((i) => i.id === target.id)
-                      ? old.later.filter((i) => i.id !== target.id)
-                      : [target, ...old.later],
+                    later: (
+                      old.later.some((i) => i.id === target.id)
+                        ? old.later.filter((i) => i.id !== target.id)
+                        : [target, ...old.later]
+                    ).slice(0, 100),
                   }));
                   setQuick(null);
                 }}
@@ -1185,6 +1250,7 @@ const s = StyleSheet.create({
   quickTitle: { color: palette.text, fontSize: 20, fontWeight: "600" },
   quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   history: { gap: 10, marginBottom: 10 },
+  historyScroll: { maxHeight: 150 },
   heading: {
     flexDirection: "row",
     alignItems: "center",

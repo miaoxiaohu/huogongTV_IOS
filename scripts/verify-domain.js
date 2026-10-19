@@ -277,6 +277,27 @@ console.log("== reading the local records back ==");
             eq([state.library.favorites.length, Object.keys(state.library.progress).length, Object.keys(state.library.favoriteUpdates).length, state.library.searches.length, state.library.later.length], [0, 0, 0, 0, 0], "a library with a broken progress map is ignored");
         }
         {
+            // One broken field must not throw the others away.
+            store.set(
+                "library.v1",
+                JSON.stringify({
+                    favorites: "not a list",
+                    progress: { good: { series: { id: "1", title: "剧" }, episodeNumber: 1, position: 0 } },
+                    searches: [{ query: "都市", type: "comic" }],
+                    later: [{ id: "2", title: "剧二" }],
+                })
+            );
+            const state = await storage.loadState();
+            eq(state.library.favorites.length, 0, "the broken favourites are dropped");
+            eq(
+                Object.keys(state.library.progress),
+                ["good"],
+                "and the records that can be read are kept"
+            );
+            eq(state.library.searches.length, 1, "the searches survive");
+            eq(state.library.later.length, 1, "and so does the watch later list");
+        }
+        {
             store.set(
                 "library.v1",
                 JSON.stringify({

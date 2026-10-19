@@ -12,6 +12,8 @@ const empty: Library = {
   later: [],
 };
 const CATALOGUE_KEY = "catalogue.v1";
+/** How many shows the watch later list holds. */
+const LATER_LIMIT = 100;
 let pending = Promise.resolve();
 export async function loadState(): Promise<{
   settings: Settings;
@@ -51,15 +53,16 @@ export async function loadState(): Promise<{
   } catch {}
   try {
     const data = JSON.parse(rows[1][1] || "{}");
+    // Every part is read on its own: one broken field must not throw the
+    // others away.
+    const progress: Record<string, Progress> = {};
     if (
-      Array.isArray(data.favorites) &&
       data.progress &&
       typeof data.progress === "object" &&
       !Array.isArray(data.progress)
     ) {
       // A record that is not a record would crash the list later, so the
       // ones that cannot be read are dropped instead of carried along.
-      const progress: Record<string, Progress> = {};
       for (const [id, value] of Object.entries(data.progress)) {
         const entry = value as Progress;
         if (!entry || typeof entry !== "object") continue;
@@ -68,14 +71,14 @@ export async function loadState(): Promise<{
         if (typeof entry.position !== "number") continue;
         progress[id] = entry;
       }
-      library = {
-        favorites: data.favorites,
-        progress,
-        favoriteUpdates: readUpdates(data.favoriteUpdates),
-        searches: readSearches(data.searches),
-        later: readLater(data.later),
-      };
     }
+    library = {
+      favorites: readSeries(data.favorites),
+      progress,
+      favoriteUpdates: readUpdates(data.favoriteUpdates),
+      searches: readSearches(data.searches),
+      later: readSeries(data.later).slice(0, LATER_LIMIT),
+    };
   } catch {}
   return { settings, library };
 }
@@ -110,18 +113,20 @@ function readUpdates(value: any): Record<string, FavoriteUpdate> {
   return updates;
 }
 
-/** Reads the shows that were set aside, dropping the broken ones. */
-function readLater(value: any): Series[] {
+/** Reads a list of shows, dropping the ones that cannot be read. */
+function readSeries(value: any): Series[] {
   if (!Array.isArray(value)) return [];
   const rows: Series[] = [];
   for (const raw of value) {
     if (!raw || typeof raw !== "object") continue;
+    // The id is what everything hangs on. A show without a title is still
+    // worth keeping - the TV app keeps those too - so only the id is
+    // required.
     if (typeof raw.id !== "string" || !raw.id) continue;
-    if (typeof raw.title !== "string" || !raw.title) continue;
     if (rows.some((row) => row.id === raw.id)) continue;
     rows.push({
       id: raw.id,
-      title: raw.title,
+      title: typeof raw.title === "string" ? raw.title : "",
       cover: typeof raw.cover === "string" ? raw.cover : "",
       description: typeof raw.description === "string" ? raw.description : "",
       badge: typeof raw.badge === "string" ? raw.badge : "",

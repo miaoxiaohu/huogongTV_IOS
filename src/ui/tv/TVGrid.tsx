@@ -31,6 +31,8 @@ export const TVGrid = forwardRef<
     positions?: Record<string, { rank: number | null; heat: string }>;
     /** A long press on a card, for the quick actions. */
     onLongPress?: (item: Series) => void;
+    /** Shown above the rows and scrolled away with them. */
+    header?: React.ReactNode;
   }
 >(function TVGrid(
   {
@@ -47,6 +49,7 @@ export const TVGrid = forwardRef<
     loadMore,
     positions,
     onLongPress,
+    header,
   },
   ref
 ) {
@@ -57,6 +60,8 @@ export const TVGrid = forwardRef<
   const titleHeight = Math.ceil(48 * fontScale);
   const rowHeight = coverHeight + titleHeight + 36;
   const [viewport, setViewport] = useState(rowHeight);
+  // The header sits above the rows, so every row is that much further down.
+  const [headerHeight, setHeaderHeight] = useState(0);
   const list = useRef<FlatList<Series>>(null);
   const initial = useRef(
     restoredIndex(
@@ -116,8 +121,15 @@ export const TVGrid = forwardRef<
         getItemLayout={(_, index) => ({
           index,
           length: rowHeight,
-          offset: rowHeight * index,
+          offset: headerHeight + index * rowHeight,
         })}
+        ListHeaderComponent={
+          header ? (
+            <View onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+              {header}
+            </View>
+          ) : null
+        }
         onLayout={(event) => {
           requestAnimationFrame(restoreFocus);
         }}
