@@ -35,8 +35,11 @@ jobs:
           # trace that points at Metro instead of at the broken file.
           node scripts/check-sources.js
           npx tsc --noEmit
-          node scripts/verify-signer.js
-          node scripts/verify-crypto.js
+          # The offline verification suites: the signer, the crypto, the
+          # base64 codec, the media crypto against a Kotlin transliteration,
+          # the CENC parser against synthetic files, and the retry behaviour
+          # of the signed player. All of them run without a network.
+          node scripts/verify-all.js
 
       - name: Pod install
         run: |

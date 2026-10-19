@@ -11,10 +11,10 @@ import {
 import { TVFocusGuideView, focusTV, useTVEventHandler } from "./tv/compat";
 import Video, { VideoRef } from "react-native-video";
 import { ContentProvider, Detail, Playback, Progress } from "../domain/model";
+import { RecoveryController, formatClock } from "../data/recovery";
 import { Button, Notice, palette } from "./components";
 import { seekPosition, tvInsets } from "./tv/layout";
-const clock = (n: number) =>
-  `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
+const clock = formatClock;
 export function Player({
   detail,
   initialIndex,
@@ -22,6 +22,8 @@ export function Player({
   provider,
   onExit,
   onProgress,
+  onTryLowerQuality,
+  maxQuality = 1080,
   test = false,
 }: {
   detail: Detail;
@@ -30,6 +32,10 @@ export function Player({
   provider: ContentProvider;
   onExit: () => void;
   onProgress: (p: Progress) => void;
+  /** Drop to a lower quality and play again, the way the TV app does. */
+  onTryLowerQuality?: () => void;
+  /** The quality ceiling currently in force, so "try 720P" can be hidden. */
+  maxQuality?: number;
   test?: boolean;
 }) {
   const { width, height } = useWindowDimensions();
@@ -72,11 +78,28 @@ export function Player({
     completed: false,
   });
   const seekStart = useRef(initialPosition);
-  const retried = useRef(false);
   const lastSaved = useRef(0);
+  // The recovery controller is created before `refresh` exists, so it calls
+  // it through a ref.
+  const refreshRef = useRef<() => void>(() => {});
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const episode = detail.episodes[index];
+
+  // Automatic playback recovery, the way the TV app does it: a failure that
+  // looks like a transport problem is retried on its own a few times, with a
+  // growing delay, and the watching position is kept.
+  const [autoRecovery, setAutoRecovery] = useState(false);
+  const [recoveryNote, setRecoveryNote] = useState("");
+  const recoveryRef = useRef<RecoveryController | null>(null);
+  if (!recoveryRef.current) {
+    recoveryRef.current = new RecoveryController({
+      onRetry: () => refreshRef.current(),
+      onNote: (note) => setRecoveryNote(note),
+      onState: (armed) => setAutoRecovery(armed),
+    });
+  }
+  const recovery = recoveryRef.current;
   const save = useCallback(() => {
     if (test) return;
     const { episodes: _, ...series } = detail;
@@ -88,12 +111,41 @@ export function Player({
       updatedAt: Date.now(),
     });
   }, [detail, episode, test]);
+
+  /** A playback failure: show it, and retry it when it is worth retrying. */
+  function fail(message: string) {
+    setError(message);
+    if (test) return;
+    recovery.fail(message, progress.current.position);
+  }
+
+  /** The user asked for a retry: the budget starts over. */
+  function manualRetry() {
+    recovery.manual();
+    refresh();
+  }
+
+  function stopAutoRecovery() {
+    recovery.cancel();
+  }
+
+  /** Play again in a lower quality, the way the TV app offers it. */
+  function tryLowerQuality() {
+    if (!onTryLowerQuality) return;
+    recovery.manual();
+    seekStart.current = progress.current.position;
+    onTryLowerQuality();
+  }
+
   useEffect(() => {
     let live = true;
     setSource(undefined);
     setError("");
     setBuffering(false);
     setStatus("正在准备播放…");
+    // A new attempt starts, but the recovery budget survives it: only a
+    // retry the user asked for puts the budget back to the start.
+    recovery.begin();
     const request = test
       ? Promise.resolve({
           uri: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
@@ -107,12 +159,13 @@ export function Player({
         if (live) setSource(value);
       })
       .catch((e) => {
-        if (live) setError(e.message);
+        if (live) fail(e.message);
       });
     return () => {
       live = false;
     };
   }, [episode.id, provider, retry, test]);
+  useEffect(() => () => recovery.dispose(), []);
   useEffect(() => () => save(), [save]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -120,7 +173,11 @@ export function Player({
         stopScrub();
         setPaused(true);
         save();
+        return;
       }
+      // Coming back to the app is the moment a connection that was down
+      // usually works again, so the recovery does not have to wait.
+      recovery.poke(progress.current.position);
     });
     const back = BackHandler.addEventListener("hardwareBackPress", () => {
       if (panel) {
@@ -179,11 +236,11 @@ export function Player({
   function switchEpisode(next: number) {
     if (next < 0 || next >= detail.episodes.length) return;
     stopScrub();
+    recovery.reset();
     save();
     pendingSeek.current = 0;
     setSource(undefined);
     seekStart.current = 0;
-    retried.current = false;
     lastSaved.current = 0;
     setFinished(false);
     setPaused(false);
@@ -205,6 +262,7 @@ export function Player({
     setPaused(false);
     setRetry((n) => n + 1);
   }
+  refreshRef.current = refresh;
   function togglePlayback() {
     reveal();
     if (!source || error) return;
@@ -274,10 +332,7 @@ export function Player({
           }}
           onError={() => {
             stopScrub();
-            if (!retried.current && !test) {
-              retried.current = true;
-              refresh();
-            } else setError("视频暂时无法播放，请重试或返回选择其他分集");
+            fail("播放失败，可重试或切换清晰度。");
           }}
         />
       )}
@@ -319,7 +374,28 @@ export function Player({
       )}
       <View pointerEvents={error ? "auto" : "none"} style={s.center}>
         {error ? (
-          <Notice message={error} retry={refresh} />
+          <Notice
+            message={error}
+            note={recoveryNote}
+            retry={manualRetry}
+            actions={
+              <View style={s.failureActions}>
+                {onTryLowerQuality && maxQuality > 720 ? (
+                  <Button label="尝试 720P" onPress={tryLowerQuality} />
+                ) : null}
+                <Button
+                  label="返回选集"
+                  onPress={() => {
+                    save();
+                    onExit();
+                  }}
+                />
+                {autoRecovery ? (
+                  <Button label="停止自动重试" onPress={stopAutoRecovery} />
+                ) : null}
+              </View>
+            }
+          />
         ) : !source ? (
           <Text style={s.buffer}>{status}</Text>
         ) : buffering ? (
@@ -442,6 +518,12 @@ const s = StyleSheet.create({
     marginVertical: 12,
   },
   controls: { flexDirection: "row", gap: 12, justifyContent: "center" },
+  failureActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "center",
+  },
   hint: { fontSize: 15, color: palette.text, textAlign: "center" },
   center: {
     ...StyleSheet.absoluteFillObject,

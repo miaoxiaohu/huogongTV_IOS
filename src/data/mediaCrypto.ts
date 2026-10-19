@@ -12,33 +12,31 @@
  * box is rewritten back to the original codec, iOS can play it natively.
  */
 import { sha512, aesDecryptCbc } from "./crypto";
-
-const B64 =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+import { base64Decode } from "./base64";
+import { BAD_CONTENT_KEY, BAD_PLAYBACK_ADDRESS } from "./errors";
 
 /** Base64 decoder that also accepts the URL-safe alphabet, like the Kotlin. */
 export function decodeBase64Url(input: string): Uint8Array {
-  const s = input.replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
-  const out: number[] = [];
-  let buf = 0;
-  let bits = 0;
-  for (let i = 0; i < s.length; i++) {
-    const idx = B64.indexOf(s[i]);
-    if (idx < 0) continue;
-    buf = (buf << 6) | idx;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out.push((buf >>> bits) & 255);
-    }
-  }
-  return new Uint8Array(out);
+  if (typeof input !== "string") throw new Error(BAD_CONTENT_KEY);
+  return base64Decode(input.replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, ""));
 }
 
+/**
+ * Hex decoder that rejects anything that is not a hex digit.
+ *
+ * The Kotlin's hex() uses toInt(16), which throws on a bad digit, so a
+ * malformed blob is rejected instead of being turned into a key full of
+ * zeros. parseInt would return NaN, and a NaN written into a Uint8Array
+ * becomes 0, which would quietly produce a wrong content key.
+ */
 function hexToBytes(s: string): Uint8Array {
+  if (s.length % 2 !== 0) throw new Error(BAD_CONTENT_KEY);
   const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < s.length; i += 2)
-    out[i / 2] = parseInt(s.slice(i, i + 2), 16);
+  for (let i = 0; i < s.length; i += 2) {
+    const pair = s.slice(i, i + 2);
+    if (!/^[0-9a-fA-F]{2}$/.test(pair)) throw new Error(BAD_CONTENT_KEY);
+    out[i / 2] = parseInt(pair, 16);
+  }
   return out;
 }
 
@@ -64,12 +62,12 @@ function popcount(n: number): number {
  */
 export function deriveKey(value: string): Uint8Array {
   const raw = decodeBase64Url(value);
-  if (raw.length < 3) throw new Error("内容密钥格式异常");
+  if (raw.length < 3) throw new Error(BAD_CONTENT_KEY);
   const length = Math.min(
     raw.length - ((raw[0] ^ raw[1] ^ raw[2]) & 0xff) + 47,
     raw.length - 1
   );
-  if (length < 33) throw new Error("内容密钥格式异常");
+  if (length < 33) throw new Error(BAD_CONTENT_KEY);
   const work = raw.slice(1, 1 + length);
   let a = 85;
   let b = 246;
@@ -87,7 +85,7 @@ export function deriveKey(value: string): Uint8Array {
   }
   const text = String.fromCharCode(...work.slice(1, 33));
   const key = hexToBytes(text);
-  if (key.length !== 16) throw new Error("内容密钥格式异常");
+  if (key.length !== 16) throw new Error(BAD_CONTENT_KEY);
   return key;
 }
 
@@ -108,7 +106,7 @@ export function decryptUrl(value: string, seed: Uint8Array): string {
     raw[2] !== 1 ||
     raw[3] !== 0
   ) {
-    throw new Error("播放地址格式异常");
+    throw new Error(BAD_PLAYBACK_ADDRESS);
   }
   const inner = sha512(seed);
   const h = sha512(concat(inner, URL_CONSTANTS));

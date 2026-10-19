@@ -76,5 +76,114 @@ for (const bits of [128, 256]) {
     check("aes-" + bits + "-ctr decrypt", aesCtr(new Uint8Array(key), new Uint8Array(ctr), new Uint8Array(enc)), dec);
 }
 
+console.log("=== aes ctr edge cases ===");
+{
+    // Every length from 0 to 80, so the last partial block is covered.
+    for (let len = 0; len <= 80; len++) {
+        const key = crypto.randomBytes(16);
+        const ctr = crypto.randomBytes(16);
+        const data = crypto.randomBytes(len);
+        const cipher = crypto.createCipheriv("aes-128-ctr", key, ctr);
+        cipher.setAutoPadding(false);
+        const want = Buffer.concat([cipher.update(data), cipher.final()]);
+        const got = Buffer.from(aesCtr(new Uint8Array(key), new Uint8Array(ctr), new Uint8Array(data)));
+        if (!got.equals(want)) {
+            fail("aes-128-ctr len=" + len);
+            break;
+        }
+    }
+    pass++;
+    console.log("  ok   aes-128-ctr for every length from 0 to 80");
+}
+{
+    // A counter that runs off the end has to wrap, not stop.
+    const key = crypto.randomBytes(16);
+    const ctr = Buffer.alloc(16, 0xff);
+    const data = crypto.randomBytes(64);
+    const cipher = crypto.createCipheriv("aes-128-ctr", key, ctr);
+    cipher.setAutoPadding(false);
+    const want = Buffer.concat([cipher.update(data), cipher.final()]);
+    const got = Buffer.from(aesCtr(new Uint8Array(key), new Uint8Array(ctr), new Uint8Array(data)));
+    if (got.equals(want)) {
+        pass++;
+        console.log("  ok   aes-128-ctr wraps the counter");
+    } else {
+        fail("aes-128-ctr counter wrap");
+    }
+}
+{
+    // The counter only ever has to advance in the low 64 bits, because the
+    // per sample iv is 8 bytes followed by 8 zero bytes.
+    const key = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(8);
+    const counter = Buffer.concat([iv, Buffer.alloc(8)]);
+    for (const blocks of [1, 2, 255, 256, 257, 1000]) {
+        const data = crypto.randomBytes(blocks * 16);
+        const cipher = crypto.createCipheriv("aes-128-ctr", key, counter);
+        cipher.setAutoPadding(false);
+        const want = Buffer.concat([cipher.update(data), cipher.final()]);
+        const got = Buffer.from(aesCtr(new Uint8Array(key), new Uint8Array(counter), new Uint8Array(data)));
+        if (!got.equals(want)) {
+            fail("aes-128-ctr " + blocks + " blocks");
+            break;
+        }
+    }
+    pass++;
+    console.log("  ok   aes-128-ctr with a per sample iv over many blocks");
+}
+{
+    // A megabyte, to be sure nothing degrades over a long run.
+    const key = crypto.randomBytes(16);
+    const ctr = crypto.randomBytes(16);
+    const data = crypto.randomBytes(1024 * 1024);
+    const cipher = crypto.createCipheriv("aes-128-ctr", key, ctr);
+    cipher.setAutoPadding(false);
+    const want = Buffer.concat([cipher.update(data), cipher.final()]);
+    const started = Date.now();
+    const got = Buffer.from(aesCtr(new Uint8Array(key), new Uint8Array(ctr), new Uint8Array(data)));
+    const speed = (data.length / 1048576) / ((Date.now() - started) / 1000);
+    if (got.equals(want)) {
+        pass++;
+        console.log("  ok   aes-128-ctr over 1 MB at " + speed.toFixed(1) + " MB/s");
+    } else {
+        fail("aes-128-ctr over 1 MB");
+    }
+}
+{
+    // 192 and 256 bit keys, the sizes the source never uses but the code
+    // claims to support.
+    for (const bits of [192, 256]) {
+        const key = crypto.randomBytes(bits / 8);
+        const ctr = crypto.randomBytes(16);
+        const data = crypto.randomBytes(1000);
+        const cipher = crypto.createCipheriv("aes-" + bits + "-ctr", key, ctr);
+        cipher.setAutoPadding(false);
+        const want = Buffer.concat([cipher.update(data), cipher.final()]);
+        const got = Buffer.from(aesCtr(new Uint8Array(key), new Uint8Array(ctr), new Uint8Array(data)));
+        if (!got.equals(want)) {
+            fail("aes-" + bits + "-ctr");
+            break;
+        }
+    }
+    pass++;
+    console.log("  ok   aes-192-ctr and aes-256-ctr");
+}
+
+console.log("=== sha-512 edge cases ===");
+{
+    // The padding has to switch at the right length.
+    for (const len of [111, 112, 113, 239, 240, 241]) {
+        const buf = crypto.randomBytes(len);
+        const got = Buffer.from(sha512(new Uint8Array(buf))).toString("hex");
+        const want = crypto.createHash("sha512").update(buf).digest("hex");
+        if (got !== want) {
+            fail("sha512 len=" + len);
+            break;
+        }
+    }
+    pass++;
+    console.log("  ok   sha512 across the padding boundary");
+}
+
 console.log("\npass=" + pass + " fail=" + fail);
 process.exit(fail ? 1 : 0);

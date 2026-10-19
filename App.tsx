@@ -286,6 +286,8 @@ export default function App() {
           provider={provider}
           onExit={exitPlayer}
           onProgress={record}
+          maxQuality={maxQuality}
+          onTryLowerQuality={() => void changeQuality(720)}
           test={play.test}
         />
       </View>

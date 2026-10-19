@@ -17,6 +17,7 @@
 import { Dirs, FileSystem } from "react-native-file-access";
 import { base64Decode, base64Encode } from "./base64";
 import { decryptChunk, headerEnd, prepare } from "./cenc";
+import { EMPTY_CONTENT } from "./errors";
 
 /** How many bytes travel through the bridge per read/write round trip. */
 const CHUNK_BYTES = 512 * 1024;
@@ -94,7 +95,7 @@ export async function prepareLocalMedia(request: MediaRequest): Promise<string> 
     if (!result.ok) throw new Error(`视频下载失败（HTTP ${result.status}）`);
 
     const total = (await FileSystem.stat(rawPath)).size;
-    if (total < MIN_PLAYABLE) throw new Error("视频内容为空");
+    if (total < MIN_PLAYABLE) throw new Error(EMPTY_CONTENT);
 
     // Clear content needs no rewriting at all - copy it straight over.
     if (!request.key) {

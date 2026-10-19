@@ -20,6 +20,14 @@ import {
 import { sign, newDevice } from "./signer";
 import { decodeBase64Url, decryptUrl, deriveKey } from "./mediaCrypto";
 import { prepareLocalMedia } from "./media";
+import {
+    BAD_PLAYBACK_ADDRESS,
+    NO_PLAYBACK_RESOURCE,
+    NO_PUBLIC_SOURCE,
+    NO_USABLE_QUALITY,
+    PLAYBACK_INFO_EMPTY,
+    PLAYER_UNAVAILABLE,
+} from "./errors";
 
 type SignedRequest = {
   url: string;
@@ -98,6 +106,51 @@ export class ApiProvider implements ContentProvider {
     const device = newDevice();
     const signed = sign(VIDEO_API, device, body);
     return this.fetchText(signed.url, signed);
+  }
+
+  /**
+   * Fetches a JSON document, retrying the answers that are clearly broken.
+   *
+   * The signed player answers HTTP 200 with a zero-byte body every so often.
+   * The Kotlin app documents the same behaviour and drops straight down to the
+   * public player, which only hosts the first three episodes of a series - so
+   * one empty answer costs the user the whole episode.
+   *
+   * The signed request signs itself with a fresh device identity every time,
+   * and a shared identity is exactly what the server blocks silently, so each
+   * attempt is a genuinely new request. A body that is empty or that is not
+   * JSON at all is a broken answer and is worth another try; an HTTP error
+   * status is a real answer from the server and is not retried.
+   */
+  private async fetchJson(
+    makeRequest: () => Promise<string>,
+    attempts = 3
+  ): Promise<any> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      }
+      try {
+        const text = await makeRequest();
+        if (!text || text.trim().length === 0) {
+          lastError = new Error("播放接口返回空内容");
+          continue;
+        }
+        return JSON.parse(text);
+      } catch (error) {
+        const failure = error as Error;
+        const status = /^HTTP (\d+)/.exec(failure.message);
+        if (status) {
+          const code = parseInt(status[1], 10);
+          // A 4xx is the server's real answer and is not worth another try;
+          // a 5xx is the server having a bad moment, so it is.
+          if (code < 500) throw failure;
+        }
+        lastError = failure;
+      }
+    }
+    throw lastError ?? new Error("播放接口暂不可用");
   }
 
   // -------------------------------------------------------------------------
@@ -289,17 +342,19 @@ export class ApiProvider implements ContentProvider {
       video_id: id,
     });
     const body = new TextEncoder().encode(payload);
-    const html = await this.signedFetch(VIDEO_API, body);
     let data: any;
     try {
-      data = JSON.parse(html);
+      data = await this.fetchJson(() => this.signedFetch(VIDEO_API, body));
     } catch {
-      throw new Error("播放接口暂不可用");
+      // The retry already tried three times with three different identities.
+      // The reason is not worth showing raw, the user only needs to know
+      // that it did not work.
+      throw new Error(PLAYER_UNAVAILABLE);
     }
     const code = data.code ?? data.Code ?? -1;
-    if (code !== 0) throw new Error("播放接口暂不可用");
+    if (code !== 0) throw new Error(PLAYER_UNAVAILABLE);
     const map = data.data;
-    if (!map) throw new Error("播放信息为空");
+    if (!map) throw new Error(PLAYBACK_INFO_EMPTY);
 
     // video_model can be a JSON string or object
     let model: any;
@@ -309,11 +364,11 @@ export class ApiProvider implements ContentProvider {
         try {
           model = JSON.parse(map.video_model);
         } catch {
-          throw new Error("播放信息为空");
+          throw new Error(PLAYBACK_INFO_EMPTY);
         }
       }
     } else {
-      throw new Error("播放信息为空");
+      throw new Error(PLAYBACK_INFO_EMPTY);
     }
 
     const fallbackRaw = model.fallback_api;
@@ -325,22 +380,21 @@ export class ApiProvider implements ContentProvider {
 
     fallbackUrl = this.cleanUrl(fallbackUrl);
     if (!fallbackUrl.startsWith("https://") && !fallbackUrl.startsWith("http://")) {
-      throw new Error("播放地址格式异常");
+      throw new Error(BAD_PLAYBACK_ADDRESS);
     }
 
     // Fetch the actual stream info from the fallback URL
-    const streamResp = await this.fetchText(fallbackUrl);
     let streamData: any;
     try {
-      streamData = JSON.parse(streamResp);
+      streamData = await this.fetchJson(() => this.fetchText(fallbackUrl));
     } catch {
-      throw new Error("没有播放资源");
+      throw new Error(NO_PLAYBACK_RESOURCE);
     }
     const info =
       streamData.video_info?.data ||
-      (() => { throw new Error("没有播放资源"); })();
+      (() => { throw new Error(NO_PLAYBACK_RESOURCE); })();
     const videoList = info.video_list ||
-      (() => { throw new Error("没有可用清晰度"); })();
+      (() => { throw new Error(NO_USABLE_QUALITY); })();
 
     const entries: Array<{ key: string; quality: number; obj: any }> = [];
     for (const [k, v] of Object.entries(videoList)) {
@@ -363,7 +417,7 @@ export class ApiProvider implements ContentProvider {
       entries.push({ key: k, quality, obj });
     }
 
-    if (entries.length === 0) throw new Error("没有可用清晰度");
+    if (entries.length === 0) throw new Error(NO_USABLE_QUALITY);
 
     // Sort by quality descending, then take the best one that fits the
     // quality limit.
@@ -381,7 +435,7 @@ export class ApiProvider implements ContentProvider {
       url = decryptUrl(url, decodeBase64Url(keySeed));
     }
     if (!url.startsWith("https://") && !url.startsWith("http://")) {
-      throw new Error("播放地址格式异常");
+      throw new Error(BAD_PLAYBACK_ADDRESS);
     }
 
     // MediaCrypto.deriveKey - the AES-CTR key for the sample payloads.
@@ -402,24 +456,35 @@ export class ApiProvider implements ContentProvider {
    */
   private async publicResolve(id: string): Promise<Playback> {
     const url = `${SITE}/video/public/${id}/360p.mp4`;
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), 20000);
-    try {
-      // A ranged GET, not a HEAD: some servers answer HEAD with 405.
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": VIDEO_HEADERS["User-Agent"],
-          Range: "bytes=0-0",
-        },
-        signal: abort.signal,
-      });
-      if (!response.ok) throw new Error("not found");
-    } catch (error) {
-      throw new Error("该剧集暂无公开播放资源");
-    } finally {
-      clearTimeout(timer);
+    // A blip on the probe costs the whole episode, because the signed error is
+    // the one that surfaces when the fallback is gone too. A status answer is
+    // final; a broken connection is not.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), 20000);
+      try {
+        // A ranged GET, not a HEAD: some servers answer HEAD with 405.
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent": VIDEO_HEADERS["User-Agent"],
+            Range: "bytes=0-0",
+          },
+          signal: abort.signal,
+        });
+        if (!response.ok) throw new Error("not found");
+        return { uri: url, headers: {}, quality: "360P" };
+      } catch (error) {
+        if (error instanceof Error && error.message === "not found") {
+          throw new Error(NO_PUBLIC_SOURCE);
+        }
+      } finally {
+        clearTimeout(timer);
+      }
     }
-    return { uri: url, headers: {}, quality: "360P" };
+    throw new Error(NO_PUBLIC_SOURCE);
   }
 
   private qualityNumber(value: string): number {

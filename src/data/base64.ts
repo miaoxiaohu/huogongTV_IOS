@@ -59,6 +59,7 @@ export function base64Encode(bytes: Uint8Array): string {
 }
 
 export function base64Decode(text: string): Uint8Array {
+  if (typeof text !== "string") return new Uint8Array(0);
   const len = text.length;
   // Every 4 characters carry 3 bytes; the tail is handled separately.
   const full = len - (len % 4);
@@ -80,9 +81,10 @@ export function base64Decode(text: string): Uint8Array {
     const a = LOOKUP[text.charCodeAt(i)];
     const b = LOOKUP[text.charCodeAt(i + 1)];
     if (a >= 0 && b >= 0) {
-      const n = (a << 18) | (b << 12);
+      const c = LOOKUP[text.charCodeAt(i + 2)];
+      const n = (a << 18) | (b << 12) | ((c >= 0 ? c : 0) << 6);
       out[o++] = (n >>> 16) & 0xff;
-      if (LOOKUP[text.charCodeAt(i + 2)] >= 0) out[o++] = (n >>> 8) & 0xff;
+      if (c >= 0) out[o++] = (n >>> 8) & 0xff;
     }
   }
   return out.subarray(0, o);

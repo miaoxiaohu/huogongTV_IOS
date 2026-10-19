@@ -5,7 +5,8 @@
   "scripts": {
     "start": "react-native start",
     "typecheck": "tsc --noEmit",
-    "check": "node scripts/check-sources.js && tsc --noEmit && node scripts/verify-signer.js && node scripts/verify-crypto.js"
+    "check": "node scripts/check-sources.js && tsc --noEmit && node scripts/verify-all.js",
+    "check:live": "node scripts/verify-live.js --full"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

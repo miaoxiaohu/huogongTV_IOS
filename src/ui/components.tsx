@@ -141,16 +141,24 @@ export function Notice({
   message,
   busy = false,
   retry,
+  note,
+  actions,
 }: {
   message: string;
   busy?: boolean;
   retry?: () => void;
+  /** A smaller line under the message, e.g. what is about to happen next. */
+  note?: string;
+  /** Extra buttons, e.g. "try a lower quality" next to "retry". */
+  actions?: React.ReactNode;
 }) {
   return (
     <View style={s.notice}>
       {busy && <ActivityIndicator color={palette.accent} size="large" />}
       <Text style={s.noticeText}>{message}</Text>
+      {note ? <Text style={s.noticeNote}>{note}</Text> : null}
       {retry && <Button label="重试" onPress={retry} primary preferred />}
+      {actions}
     </View>
   );
 }
@@ -208,6 +216,12 @@ const s = StyleSheet.create({
     justifyContent: "center",
     padding: 36,
     gap: 22,
+  },
+  noticeNote: {
+    color: palette.muted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
   },
   noticeText: {
     color: palette.muted,
