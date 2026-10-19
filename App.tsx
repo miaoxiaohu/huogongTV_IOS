@@ -90,6 +90,7 @@ export default function App() {
     favoriteUpdates: {},
     searches: [],
     later: [],
+    watched: [],
   });
   const libraryRef = useRef(library);
   const [tab, setTab] = useState<Tab>("推荐");
@@ -309,6 +310,29 @@ export default function App() {
       setWalk((old) => ({ ...old, running: false }));
       setMessage("片库索引没走完，可继续");
     }
+  }
+
+  /** Marks a show as watched through, or takes the mark back. */
+  function setWatched(id: string, watched: boolean) {
+    updateLibrary((old) => ({
+      ...old,
+      watched: watched
+        ? Array.from(new Set([...old.watched, id]))
+        : old.watched.filter((row) => row !== id),
+    }));
+  }
+
+  /** Deletes the watching record of a show. The favourite stays. */
+  function removeProgress(id: string) {
+    updateLibrary((old) => {
+      const progress = { ...old.progress };
+      delete progress[id];
+      return {
+        ...old,
+        progress,
+        watched: old.watched.filter((row) => row !== id),
+      };
+    });
   }
 
   /** Plays a show from the quick actions, at the place it was left. */
@@ -708,9 +732,11 @@ export default function App() {
       : tab === "最近观看"
       ? recent.map((p) => ({
           ...p.series,
-          badge: `第 ${p.episodeNumber} 集 · ${
-            p.completed ? "已看完" : Math.floor(p.position / 60) + " 分钟"
-          }`,
+          badge: library.watched.includes(p.series.id)
+            ? "整剧已看完"
+            : `第 ${p.episodeNumber} 集 · ${
+                p.completed ? "已看完" : Math.floor(p.position / 60) + " 分钟"
+              }`,
         }))
       : tab === "排行榜"
       ? ranking.items.map((item) => ({
@@ -727,13 +753,17 @@ export default function App() {
   // what they set aside.
   //
   // A finished episode is not filtered out: the app resumes at the next one,
-  // so the show is exactly the one the user wants back.
-  const resumeShelf = recent.slice(0, 8).map((p) => ({
-    ...p.series,
-    badge: `第 ${p.episodeNumber} 集 · ${
-      p.completed ? "接着看下一集" : `${Math.floor(p.position / 60)} 分钟`
-    }`,
-  }));
+  // so the show is exactly the one the user wants back. What is filtered out
+  // is a show the user marked as watched through - that one is done with.
+  const resumeShelf = recent
+    .filter((p) => !library.watched.includes(p.series.id))
+    .slice(0, 8)
+    .map((p) => ({
+      ...p.series,
+      badge: `第 ${p.episodeNumber} 集 · ${
+        p.completed ? "接着看下一集" : `${Math.floor(p.position / 60)} 分钟`
+      }`,
+    }));
   const updatedShelf = library.favorites
     .filter(
       (series) =>
@@ -1183,43 +1213,75 @@ export default function App() {
               {quick.title}
             </Text>
             <View style={s.quickActions}>
-              <Button
-                label={
-                  library.progress[quick.id] ? "继续观看" : "直接播放"
-                }
-                primary
-                onPress={() => playSeries(quick)}
-              />
-              <Button
-                label={
-                  library.favorites.some((i) => i.id === quick.id)
-                    ? "取消收藏"
-                    : "收藏这部剧"
-                }
-                onPress={() => {
-                  favorite(quick);
-                  setQuick(null);
-                }}
-              />
-              <Button
-                label={
-                  library.later.some((i) => i.id === quick.id)
-                    ? "移出稍后看"
-                    : "加入稍后看"
-                }
-                onPress={() => {
-                  const target = quick;
-                  updateLibrary((old) => ({
-                    ...old,
-                    later: (
-                      old.later.some((i) => i.id === target.id)
-                        ? old.later.filter((i) => i.id !== target.id)
-                        : [target, ...old.later]
-                    ).slice(0, 100),
-                  }));
-                  setQuick(null);
-                }}
-              />
+              {tab === "最近观看" ? (
+                <>
+                  <Button
+                    label="继续观看"
+                    primary
+                    onPress={() => playSeries(quick)}
+                  />
+                  <Button
+                    label={
+                      library.watched.includes(quick.id)
+                        ? "恢复未看状态"
+                        : "标记整剧已看"
+                    }
+                    onPress={() => {
+                      const id = quick.id;
+                      setWatched(id, !library.watched.includes(id));
+                      setQuick(null);
+                    }}
+                  />
+                  <Button
+                    label="删除这条记录"
+                    onPress={() => {
+                      const id = quick.id;
+                      removeProgress(id);
+                      setQuick(null);
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <Button
+                    label={
+                      library.progress[quick.id] ? "继续观看" : "直接播放"
+                    }
+                    primary
+                    onPress={() => playSeries(quick)}
+                  />
+                  <Button
+                    label={
+                      library.favorites.some((i) => i.id === quick.id)
+                        ? "取消收藏"
+                        : "收藏这部剧"
+                    }
+                    onPress={() => {
+                      favorite(quick);
+                      setQuick(null);
+                    }}
+                  />
+                  <Button
+                    label={
+                      library.later.some((i) => i.id === quick.id)
+                        ? "移出稍后看"
+                        : "加入稍后看"
+                    }
+                    onPress={() => {
+                      const target = quick;
+                      updateLibrary((old) => ({
+                        ...old,
+                        later: (
+                          old.later.some((i) => i.id === target.id)
+                            ? old.later.filter((i) => i.id !== target.id)
+                            : [target, ...old.later]
+                        ).slice(0, 100),
+                      }));
+                      setQuick(null);
+                    }}
+                  />
+                </>
+              )}
               <Button
                 label="查看剧集详情"
                 onPress={() => {

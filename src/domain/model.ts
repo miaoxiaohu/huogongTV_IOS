@@ -42,6 +42,8 @@ export interface Library {
   searches: RecentSearch[];
   /** The shows the user set aside to watch later. */
   later: Series[];
+  /** The shows the user marked as watched through. */
+  watched: string[];
 }
 export interface Settings {
   baseUrl: string;

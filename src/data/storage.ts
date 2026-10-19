@@ -10,6 +10,7 @@ const empty: Library = {
   favoriteUpdates: {},
   searches: [],
   later: [],
+  watched: [],
 };
 const CATALOGUE_KEY = "catalogue.v1";
 /** How many shows the watch later list holds. */
@@ -78,6 +79,7 @@ export async function loadState(): Promise<{
       favoriteUpdates: readUpdates(data.favoriteUpdates),
       searches: readSearches(data.searches),
       later: readSeries(data.later).slice(0, LATER_LIMIT),
+      watched: readWatched(data.watched),
     };
   } catch {}
   return { settings, library };
@@ -111,6 +113,18 @@ function readUpdates(value: any): Record<string, FavoriteUpdate> {
     };
   }
   return updates;
+}
+
+/** Reads the shows the user marked as watched through. */
+function readWatched(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  const rows: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string" || !raw) continue;
+    if (rows.includes(raw)) continue;
+    rows.push(raw);
+  }
+  return rows;
 }
 
 /** Reads a list of shows, dropping the ones that cannot be read. */

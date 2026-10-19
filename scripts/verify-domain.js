@@ -303,6 +303,22 @@ console.log("== reading the local records back ==");
                 JSON.stringify({
                     favorites: [],
                     progress: {},
+                    watched: ["1", "2", "1", "", 7, null],
+                })
+            );
+            const state = await storage.loadState();
+            eq(
+                state.library.watched,
+                ["1", "2"],
+                "only the ids that can be read are kept, and not twice"
+            );
+        }
+        {
+            store.set(
+                "library.v1",
+                JSON.stringify({
+                    favorites: [],
+                    progress: {},
                     later: [
                         { id: "1", title: "剧一", cover: "c", badge: "b", tags: "t" },
                         { id: "1", title: "重复" },
