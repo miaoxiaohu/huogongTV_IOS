@@ -19,6 +19,7 @@ import { BridgeProvider } from "./src/data/provider";
 import { ApiProvider } from "./src/data/api";
 import { loadState, saveLibrary, saveSettings, loadCatalogue, saveCatalogue } from "./src/data/storage";
 import {
+  CatalogueEntries,
   CatalogueIndex,
   CatalogueSnapshot,
   CATALOGUE_ROUTES,
@@ -41,6 +42,7 @@ import {
   Series,
   Settings,
   normalizeBaseUrl,
+  resumeTarget,
 } from "./src/domain/model";
 import { Button, Notice, palette } from "./src/ui/components";
 import { focusTV } from "./src/ui/tv/compat";
@@ -97,6 +99,9 @@ export default function App() {
     route: "",
     gaps: 0,
   });
+  // The quick actions, the way the TV app opens them on a long press.
+  const [quick, setQuick] = useState<Series | null>(null);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [play, setPlay] = useState<{
     detail: Detail;
     index: number;
@@ -123,6 +128,10 @@ export default function App() {
   );
   const grid = useRef<GridHandle>(null);
   const nav = useRef(new Map<Tab, View>());
+  // The provider is built from the settings it actually reads. Building it
+  // from the whole settings object would give it a new identity whenever the
+  // speed or the picture mode changed, and the player would take that as a
+  // new show and start the episode over.
   const provider = useMemo(
     () =>
       settings.baseUrl
@@ -131,7 +140,7 @@ export default function App() {
             category: settings.category ?? "short",
             maxQuality: settings.maxQuality ?? 540,
           }),
-    [settings]
+    [settings.baseUrl, settings.category, settings.maxQuality, settings.token]
   );
   const catalog = useCatalog(
     provider,
@@ -185,6 +194,7 @@ export default function App() {
   }, []);
 
   const walkCancelled = useRef(false);
+  const walkRunning = useRef(false);
   useEffect(() => {
     walkCancelled.current = false;
     return () => {
@@ -196,15 +206,45 @@ export default function App() {
     if (play) walkCancelled.current = true;
   }, [play]);
   async function startWalk(fromScratch: boolean, base?: CatalogueSnapshot) {
-    if (walk.running) return;
+    if (walkRunning.current) return;
     // A self hosted service has no catalogue to walk.
     if (settings.baseUrl) {
       setMessage("这个来源没有片库目录，搜索只能用到站方的十条");
       return;
     }
-    const start = fromScratch ? emptySnapshot() : base ?? catalogue;
-    setWalk({ running: true, total: start.entries.length, route: "", gaps: 0 });
-    let snapshot = start;
+    // The walk may have been stopped by the player; starting it again clears
+    // that, or it would never run a second time.
+    walkCancelled.current = false;
+    // A full re-walk starts over, but the shows that are already held keep
+    // serving: a stale index keeps answering while the rebuild runs behind
+    // it, so the count never dips to zero.
+    const held = base ?? catalogue;
+    const start = fromScratch
+      ? { ...held, cursor: {}, done: [] }
+      : held;
+    // The shows are merged by id, so a re-walk replaces the ones it sees
+    // again instead of doubling the library, and the count on the screen
+    // never dips while the index is refreshed.
+    const entries = new CatalogueEntries(start.entries, start.routes);
+    walkRunning.current = true;
+    setWalk({
+      running: true,
+      total: entries.size,
+      route: "",
+      gaps: start.gaps.length,
+    });
+    const snapshotOf = (
+      cursor: Record<string, number>,
+      done: string[],
+      gaps: string[]
+    ) => ({
+      entries: entries.entries,
+      routes: entries.routes,
+      cursor,
+      done,
+      gaps,
+      savedAt: Date.now(),
+    });
     try {
       const result = await buildCatalogue(
         (route, page) => provider.cataloguePage(route, page),
@@ -215,40 +255,32 @@ export default function App() {
           onPage: (step) => {
             // The checkpoint is written as the walk goes, so an interrupted
             // walk carries on instead of starting over.
-            snapshot = {
-              entries: [...snapshot.entries, ...step.fresh],
-              routes: [...snapshot.routes, ...step.fresh.map(() => step.route)],
-              cursor: step.cursor,
-              done: step.done,
-              savedAt: Date.now(),
-            };
+            entries.add(step.fresh, step.route);
+            const snapshot = snapshotOf(step.cursor, step.done, step.gaps);
             setCatalogue(snapshot);
             setCatalogueIndex(
               new CatalogueIndex(snapshot.entries, snapshot.routes)
             );
             setWalk({
               running: true,
-              total: snapshot.entries.length,
+              total: entries.size,
               route: step.route,
               gaps: step.gaps.length,
             });
-            void saveCatalogue(snapshot);
+            void saveCatalogue(snapshot).catch(() =>
+              setMessage("片库索引保存失败，请检查电视存储空间")
+            );
           },
         }
       );
-      snapshot = {
-        entries: [...snapshot.entries, ...result.shows],
-        routes: [...snapshot.routes, ...result.routes],
-        cursor: result.cursor,
-        done: result.done,
-        savedAt: Date.now(),
-      };
+      const snapshot = snapshotOf(result.cursor, result.done, result.gaps);
       await saveCatalogue(snapshot);
       setCatalogue(snapshot);
       setCatalogueIndex(new CatalogueIndex(snapshot.entries, snapshot.routes));
+      walkRunning.current = false;
       setWalk({
         running: false,
-        total: snapshot.entries.length,
+        total: entries.size,
         route: "",
         gaps: result.gaps.length,
       });
@@ -256,9 +288,19 @@ export default function App() {
         setMessage(`索引有 ${result.gaps.length} 页没抓到，可再走一次`);
       }
     } catch (error) {
+      walkRunning.current = false;
       setWalk((old) => ({ ...old, running: false }));
       setMessage("片库索引没走完，可继续");
     }
+  }
+
+  /** Plays a show from the quick actions, at the place it was left. */
+  function playSeries(series: Series) {
+    setQuick(null);
+    setAutoPlay(true);
+    setRestoreEpisode(undefined);
+    setError("");
+    setDetailId(series.id);
   }
   const updateLibrary = useCallback((update: (old: Library) => Library) => {
     const next = update(libraryRef.current);
@@ -291,6 +333,12 @@ export default function App() {
       .then((value) => {
         if (!live) return;
         setDetail(value);
+        // The quick actions can ask for the show to start by itself.
+        if (autoPlay) {
+          setAutoPlay(false);
+          const target = resumeTarget(value, libraryRef.current.progress[value.id]);
+          setPlay({ detail: value, index: target.index, position: target.position });
+        }
         // The other seasons of the same show are looked up once the show
         // itself is known, and they are not worth an error of their own.
         setSeasonsState("loading");
@@ -803,6 +851,7 @@ export default function App() {
               restore={restoreGrid}
               onFocus={() => setFocusArea("content")}
               onOpen={open}
+              onLongPress={setQuick}
               busy={
                 tab === "排行榜"
                   ? ranking.busy
@@ -842,6 +891,44 @@ export default function App() {
           }
         </>
       )}
+      {quick ? (
+        <View style={s.quickBackdrop}>
+          <View style={s.quickPanel}>
+            <Text style={s.quickTitle} numberOfLines={2}>
+              {quick.title}
+            </Text>
+            <View style={s.quickActions}>
+              <Button
+                label={
+                  library.progress[quick.id] ? "继续观看" : "直接播放"
+                }
+                primary
+                onPress={() => playSeries(quick)}
+              />
+              <Button
+                label={
+                  library.favorites.some((i) => i.id === quick.id)
+                    ? "取消收藏"
+                    : "收藏这部剧"
+                }
+                onPress={() => {
+                  favorite(quick);
+                  setQuick(null);
+                }}
+              />
+              <Button
+                label="查看剧集详情"
+                onPress={() => {
+                  const target = quick;
+                  setQuick(null);
+                  open(target);
+                }}
+              />
+              <Button label="取消" onPress={() => setQuick(null)} />
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -856,6 +943,22 @@ const s = StyleSheet.create({
   brand: { color: palette.accent, fontSize: 23, fontWeight: "800" },
   nav: { flexDirection: "row", gap: 8, flex: 1 },
   muted: { color: palette.muted, fontSize: 15 },
+  quickBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000000C0",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  quickPanel: {
+    backgroundColor: palette.panel,
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+    maxWidth: 560,
+  },
+  quickTitle: { color: palette.text, fontSize: 20, fontWeight: "600" },
+  quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   heading: {
     flexDirection: "row",
     alignItems: "center",

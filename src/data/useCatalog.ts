@@ -66,7 +66,7 @@ export function useCatalog(
     };
   }, []);
   const entry = cache.get(key) ?? empty();
-  async function load(replace = false) {
+  async function load(replace = false, localOnly = false) {
     const previous = cache.get(key) ?? empty();
     if (previous.busy) return;
     const next = { ...previous, busy: true, error: "" };
@@ -86,9 +86,11 @@ export function useCatalog(
           updatedText: board.updatedText,
         });
       } else if (mode === "search" && query) {
-        // The server only ever answers with ten rows, so the local index is
-        // what fills the page. The server's rows top it up.
-        const serverRows = await provider.search(query, page);
+        // The server only ever answers with ten rows, and only the first
+        // page uses them, so asking again for the later pages would spend a
+        // request to throw the answer away.
+        const serverRows =
+          page === 1 && !localOnly ? await provider.search(query, page) : [];
         const merged = mergeSearch(query, page, catalogue, serverRows, shelf);
         Object.assign(next, {
           items: replace ? merged.rows : mergePage(previous.items, merged.rows),
@@ -119,5 +121,14 @@ export function useCatalog(
   useEffect(() => {
     if (enabled && !cache.has(key) && query !== "") void load();
   }, [cache, key, enabled, query, mode]);
+  // The index grows while the walk runs, so a search that was answered
+  // early has to be asked again: the local part of the answer changed. Only
+  // the local part is asked for - the server's ten rows are the same.
+  const indexSize = catalogue?.size ?? 0;
+  useEffect(() => {
+    if (mode !== "search" || !enabled || !query) return;
+    if (!cache.has(key)) return;
+    void load(true, true);
+  }, [indexSize]);
   return { ...entry, loadMore: () => load(), refresh: () => load(true) };
 }

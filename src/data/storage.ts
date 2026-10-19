@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Library, Progress, Settings } from "../domain/model";
+import { Library, Progress, Series, Settings } from "../domain/model";
 import { normalizeFrameMode, normalizeSpeed } from "./playback";
-import { CatalogueSnapshot, emptySnapshot } from "./catalogue";
+import { CatalogueRoute, CatalogueSnapshot, emptySnapshot } from "./catalogue";
 const empty: Library = { favorites: [], progress: {} };
 const CATALOGUE_KEY = "catalogue.v1";
 let pending = Promise.resolve();
@@ -82,6 +82,8 @@ export function saveSettings(settings: Settings) {
  *
  * A snapshot that cannot be read is not a corrupt file - the app works
  * without it, the search just falls back to the ten rows the site renders.
+ * The rows are checked one by one, because one broken row would otherwise
+ * throw while the index is being built.
  */
 export async function loadCatalogue(): Promise<CatalogueSnapshot> {
   try {
@@ -91,11 +93,33 @@ export async function loadCatalogue(): Promise<CatalogueSnapshot> {
     if (!Array.isArray(data.entries) || !Array.isArray(data.routes)) {
       return emptySnapshot();
     }
+    const entries: Series[] = [];
+    const routes: (CatalogueRoute | null)[] = [];
+    data.entries.forEach((value: any, position: number) => {
+      if (!value || typeof value !== "object") return;
+      if (typeof value.id !== "string" || !value.id) return;
+      if (typeof value.title !== "string") return;
+      entries.push({
+        id: value.id,
+        title: value.title,
+        cover: typeof value.cover === "string" ? value.cover : "",
+        description: "",
+        badge: typeof value.badge === "string" ? value.badge : "",
+        tags: typeof value.tags === "string" ? value.tags : "",
+      });
+      const route = data.routes[position];
+      routes.push(
+        route === "real-drama" || route === "comic-drama" || route === "ai-drama"
+          ? route
+          : null
+      );
+    });
     return {
-      entries: data.entries,
-      routes: data.routes,
+      entries,
+      routes,
       cursor: data.cursor && typeof data.cursor === "object" ? data.cursor : {},
       done: Array.isArray(data.done) ? data.done : [],
+      gaps: Array.isArray(data.gaps) ? data.gaps : [],
       savedAt: typeof data.savedAt === "number" ? data.savedAt : 0,
     };
   } catch {
@@ -103,7 +127,31 @@ export async function loadCatalogue(): Promise<CatalogueSnapshot> {
   }
 }
 
-/** Writes the catalogue snapshot. */
+/**
+ * Writes the catalogue snapshot.
+ *
+ * Only the five fields a search needs are kept: the rows also carry a full
+ * description, and keeping it would push 2400 shows past a megabyte of JSON
+ * for text the detail page fetches anyway when it opens. The writes are
+ * serialised, so a slow write cannot overwrite a newer one.
+ */
 export function saveCatalogue(snapshot: CatalogueSnapshot) {
-  return AsyncStorage.setItem(CATALOGUE_KEY, JSON.stringify(snapshot));
+    const value = JSON.stringify({
+        entries: snapshot.entries.map((series) => ({
+            id: series.id,
+            title: series.title,
+            cover: series.cover,
+            badge: series.badge,
+            tags: series.tags,
+        })),
+        routes: snapshot.routes,
+        cursor: snapshot.cursor,
+        done: snapshot.done,
+        gaps: snapshot.gaps,
+        savedAt: snapshot.savedAt,
+    });
+    pending = pending
+        .catch(() => {})
+        .then(() => AsyncStorage.setItem(CATALOGUE_KEY, value));
+    return pending;
 }

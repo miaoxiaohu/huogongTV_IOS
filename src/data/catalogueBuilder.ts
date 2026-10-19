@@ -24,6 +24,14 @@ import { CATALOGUE_ROUTES, CatalogueRoute } from "./catalogue";
 export const PAGE_ATTEMPTS = 3;
 /** The pause between two tries of the same page. */
 export const RETRY_PAUSE_MILLIS = 1200;
+/**
+ * How many pages may fail in a row before the pass gives up.
+ *
+ * Without it a phone with no network would ask for 102 pages three times
+ * over, against an endpoint that is already sensitive about how often it is
+ * called.
+ */
+export const MAX_CONSECUTIVE_FAILURES = 3;
 
 /** What one page landing during a walk carries. */
 export type WalkStep = {
@@ -87,6 +95,7 @@ export async function buildCatalogue(
         if (done.has(route)) continue;
         let page = (resume[route] || 0) + 1;
         let totalPages = 0;
+        let consecutiveFailures = 0;
         for (;;) {
             if (isCancelled()) {
                 return { shows, routes, cursor, done: [...done], gaps };
@@ -108,7 +117,19 @@ export async function buildCatalogue(
                     await new Promise((resolve) => setTimeout(resolve, pause * attempt));
                 }
             }
-            if (!answer) break;
+            if (!answer) {
+                // The page is skipped, not the rest of the catalogue. The
+                // cursor steps over it, so the next pass does not die on the
+                // same page again.
+                consecutiveFailures++;
+                if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    return { shows, routes, cursor, done: [...done], gaps };
+                }
+                cursor[route] = page;
+                page++;
+                continue;
+            }
+            consecutiveFailures = 0;
             totalPages = answer.totalPages;
             const fresh: Series[] = [];
             for (const row of answer.rows) {
@@ -119,6 +140,12 @@ export async function buildCatalogue(
                 routes.push(route);
             }
             cursor[route] = page;
+            if (page >= totalPages) {
+                // The route is finished, and the checkpoint has to say so
+                // before the route's last page is written - otherwise the
+                // next pass asks for a page past the end of it.
+                done.add(route);
+            }
             options.onPage?.({
                 fresh,
                 route,
@@ -127,10 +154,7 @@ export async function buildCatalogue(
                 done: [...done],
                 gaps: [...gaps],
             });
-            if (page >= totalPages) {
-                done.add(route);
-                break;
-            }
+            if (page >= totalPages) break;
             page++;
         }
     }

@@ -343,6 +343,32 @@ console.log("== with no index the server's rows are all there is ==");
     eq(merged.hasMore, false, "and there is no more");
 }
 
+console.log("== the shows are merged by id ==");
+{
+    const { CatalogueEntries } = require(path.join(cache, "data/catalogue.js"));
+    const entries = new CatalogueEntries();
+    entries.add([show("1", "剧一", ""), show("2", "剧二", "")], "real-drama");
+    entries.add([show("2", "剧二", ""), show("3", "剧三", "")], "real-drama");
+    eq(entries.size, 3, "the show that came twice is only counted once");
+    eq(
+        entries.entries.map((s) => s.id),
+        ["1", "2", "3"],
+        "and the order of the first sighting is kept"
+    );
+    eq(entries.routes.length, 3, "every show has a route");
+
+    // A re-walk has to replace, not double: that is the whole point.
+    const again = new CatalogueEntries(entries.entries, entries.routes);
+    again.add(entries.entries, "real-drama");
+    eq(again.size, 3, "a re-walk does not double the library");
+
+    // A show that was not labelled before gets its label from the second pass.
+    const old = new CatalogueEntries([show("1", "剧", "")], [null]);
+    old.add([show("1", "剧", "")], "comic-drama");
+    eq(old.routes[0], "comic-drama", "the labelled copy wins");
+    eq(old.size, 1, "and the show is still only one");
+}
+
 console.log("== the walk ==");
 {
     const pages = {
@@ -392,14 +418,60 @@ setTimeout(() => {
                     attempts++;
                     throw new Error("timeout");
                 }
-                return { rows: [show(route + page, "剧", "")], totalPages: 2 };
+                return { rows: [show(route + page, "剧", "")], totalPages: 3 };
             },
             { attempts: 2, retryPauseMillis: 1 }
         );
         eq(attempts, 2, "the page was tried twice");
         eq(result.gaps.length, 1, "the page that failed is recorded");
         eq(result.gaps[0], "real-drama#2", "and it is named");
-        eq(result.done.length, 2, "the other catalogues still finished");
+        // The bad page is stepped over, not the rest of the catalogue: the
+        // walk has to keep going, or the shows behind it are lost.
+        eq(
+            result.shows.length,
+            8,
+            "the pages behind the bad one are still collected"
+        );
+        eq(result.cursor["real-drama"], 3, "the cursor stepped over the bad page");
+        eq(result.done.length, 3, "every catalogue still finished");
+
+        console.log("== the checkpoint records the route that finished ==");
+        {
+            const steps = [];
+            await buildCatalogue(
+                async (route, page) => ({
+                    rows: [show(route + page, "剧", "")],
+                    totalPages: 2,
+                }),
+                {
+                    resume: { "real-drama": 0 },
+                    done: ["comic-drama", "ai-drama"],
+                    attempts: 1,
+                    retryPauseMillis: 0,
+                    onPage: (step) => steps.push({ route: step.route, done: step.done }),
+                }
+            );
+            const last = steps[steps.length - 1];
+            last.done.includes("real-drama")
+                ? ok("the finished route is in the checkpoint of its last page")
+                : fail("the finished route is missing: " + JSON.stringify(last.done));
+        }
+
+        console.log("== a dead network gives up instead of hammering ==");
+        {
+            let requests = 0;
+            const result = await buildCatalogue(
+                async () => {
+                    requests++;
+                    throw new Error("offline");
+                },
+                { attempts: 1, retryPauseMillis: 0 }
+            );
+            requests <= 3
+                ? ok("the walk gave up after " + requests + " requests")
+                : fail("the walk made " + requests + " requests");
+            eq(result.shows.length, 0, "and it collected nothing");
+        }
 
         console.log("== the walk carries on where it stopped ==");
         const fetched = [];

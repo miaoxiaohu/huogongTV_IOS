@@ -93,9 +93,21 @@ export const Card = forwardRef<
     preferred?: boolean;
     /** The place on a hot board, when the card is on one. */
     rank?: number | null;
+    /** A long press, for the quick actions. */
+    onLongPress?: () => void;
   }
 >(function Card(
-  { item, width, coverHeight, titleHeight, onPress, onFocus, preferred, rank },
+  {
+    item,
+    width,
+    coverHeight,
+    titleHeight,
+    onPress,
+    onFocus,
+    preferred,
+    rank,
+    onLongPress,
+  },
   ref
 ) {
   const [focused, setFocused] = useState(false);
@@ -118,6 +130,8 @@ export const Card = forwardRef<
       }}
       onBlur={() => setFocused(false)}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={450}
       style={[s.card, { width }, focused && s.cardFocus]}
     >
       <View style={[s.cover, { height: coverHeight }]}>

@@ -101,6 +101,13 @@ type Entry = {
 export const SEARCH_PAGE_SIZE = 30;
 /** A page shows 30 rows; this leaves room for a few pages of scroll. */
 export const DEFAULT_LIMIT = 200;
+/**
+ * How many local matches a search keeps.
+ *
+ * The TV app keeps 400: measured over the whole library, 「都市」 hits 1042
+ * shows, so a smaller cap would make the rest of them unreachable.
+ */
+export const SEARCH_LOCAL_LIMIT = 400;
 /** Below this length a one-character slip is a different word, not a typo. */
 export const TYPO_FLOOR = 4;
 
@@ -285,11 +292,87 @@ export type CatalogueSnapshot = {
     cursor: Record<string, number>;
     /** The routes that reached their final page. */
     done: string[];
+    /** The pages that survived their retries and were skipped. */
+    gaps: string[];
     savedAt: number;
 };
 
+/**
+ * The shows a walk has collected so far, each with the route it came from.
+ *
+ * Merging is by id, and that is the whole point of this class.
+ *
+ * The walk returns every show it sees as "fresh", because it has no memory
+ * of an earlier pass - and it must not have one: a re-walk is how an index
+ * that was written before the routes were labelled gets its labels, and a
+ * show already held still has to come back so the label can be attached.
+ * Appending what the walk returns to what is already held therefore doubles
+ * the library on every re-walk: 2400 shows become 4800 rows, the number on
+ * screen says 4800, and the index is written with a count no reader will
+ * accept.
+ *
+ * Replacing the earlier copy of a show instead of appending it keeps three
+ * things true at once: the count is the number of distinct shows, the stored
+ * rows stay one row per show, and a label learned on the second pass
+ * replaces the missing one from the first.
+ *
+ * Insertion order is the walk's own order and does not change when a show is
+ * replaced, so the catalogue keeps the site's ranking - which is what a tie
+ * in a search result resolves by.
+ *
+ * Ported from kotlin-tv/core/.../CatalogueEntries.kt.
+ */
+export class CatalogueEntries {
+    private readonly order = new Map<string, Series>();
+    private readonly labels = new Map<string, CatalogueRoute | null>();
+
+    constructor(entries: Series[] = [], routes: (CatalogueRoute | null)[] = []) {
+        entries.forEach((series, position) => {
+            this.order.set(series.id, series);
+            this.labels.set(series.id, routes[position] ?? null);
+        });
+    }
+
+    /**
+     * Adds what the walk just returned, under the route.
+     *
+     * A show already held is replaced rather than added again. The
+     * replacement is the one that just came off the wire, so it carries the
+     * freshest title, cover and - the reason this matters - the route it was
+     * found on.
+     */
+    add(fresh: Series[], route: CatalogueRoute | null): void {
+        for (const series of fresh) {
+            this.order.set(series.id, series);
+            this.labels.set(series.id, route);
+        }
+    }
+
+    /** How many distinct shows are held. */
+    get size(): number {
+        return this.order.size;
+    }
+
+    /** The shows, in the order they were first seen. */
+    get entries(): Series[] {
+        return Array.from(this.order.values());
+    }
+
+    /** Which route each show came from, parallel to the entries. */
+    get routes(): (CatalogueRoute | null)[] {
+        return Array.from(this.order.keys()).map((id) => this.labels.get(id) ?? null);
+    }
+}
+
 export function emptySnapshot(): CatalogueSnapshot {
-    return { entries: [], routes: [], cursor: {}, done: [], savedAt: 0 };
+    return {
+        entries: [],
+        routes: [],
+        cursor: {},
+        done: [],
+        gaps: [],
+        savedAt: 0,
+    };
 }
 
 /** What a search answered. */
@@ -326,7 +409,7 @@ export function mergeSearch(
     shelf: "short" | "comic"
 ): SearchResult {
     const localResult = local
-        ? local.searchAllowingTypo(keyword, DEFAULT_LIMIT, shelf)
+        ? local.searchAllowingTypo(keyword, SEARCH_LOCAL_LIMIT, shelf)
         : { rows: [] as Series[], fuzzy: false };
     const localRows = localResult.rows;
 

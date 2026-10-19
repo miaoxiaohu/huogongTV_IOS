@@ -29,6 +29,8 @@ export const TVGrid = forwardRef<
     loadMore?: () => void;
     /** Where each show sits on a hot board, when the grid is one. */
     positions?: Record<string, { rank: number | null; heat: string }>;
+    /** A long press on a card, for the quick actions. */
+    onLongPress?: (item: Series) => void;
   }
 >(function TVGrid(
   {
@@ -44,6 +46,7 @@ export const TVGrid = forwardRef<
     more,
     loadMore,
     positions,
+    onLongPress,
   },
   ref
 ) {
@@ -142,6 +145,7 @@ export const TVGrid = forwardRef<
               }
               preferred={restore && index === initial}
               onPress={() => onOpen(item)}
+              onLongPress={onLongPress ? () => onLongPress(item) : undefined}
               onFocus={() => {
                 position.id = item.id;
                 position.index = index;
