@@ -7,7 +7,7 @@ export async function loadState(): Promise<{
   library: Library;
 }> {
   const rows = await AsyncStorage.multiGet(["settings.v1", "library.v1"]);
-  let settings: Settings = { baseUrl: "", token: "" };
+  let settings: Settings = { baseUrl: "", token: "", category: "short" };
   let library = empty;
   try {
     const data = JSON.parse(rows[0][1] || "{}");
@@ -15,6 +15,10 @@ export async function loadState(): Promise<{
       settings = {
         baseUrl: data.baseUrl,
         token: typeof data.token === "string" ? data.token : "",
+        category:
+          data.category === "short" || data.category === "comic"
+            ? data.category
+            : "short",
       };
   } catch {}
   try {

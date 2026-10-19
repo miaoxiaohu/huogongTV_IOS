@@ -30,6 +30,7 @@ export interface Library {
 export interface Settings {
   baseUrl: string;
   token: string;
+  category?: "short" | "comic";
 }
 export interface Playback {
   uri: string;

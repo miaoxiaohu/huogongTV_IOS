@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 import { BridgeProvider } from "./src/data/provider";
+import { ApiProvider } from "./src/data/api";
 import { loadState, saveLibrary, saveSettings } from "./src/data/storage";
 import { useCatalog } from "./src/data/useCatalog";
 import {
@@ -49,9 +50,11 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>({
     baseUrl: "",
     token: "",
+    category: "short",
   });
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [category, setCategory] = useState<"short" | "comic">("short");
   const [library, setLibrary] = useState<Library>({
     favorites: [],
     progress: {},
@@ -86,11 +89,17 @@ export default function App() {
   );
   const grid = useRef<GridHandle>(null);
   const nav = useRef(new Map<Tab, View>());
-  const provider = useMemo(() => new BridgeProvider(settings), [settings]);
+  const provider = useMemo(
+    () =>
+      settings.baseUrl
+        ? new BridgeProvider(settings)
+        : new ApiProvider({ category: settings.category }),
+    [settings]
+  );
   const catalog = useCatalog(
     provider,
     tab === "搜索" ? submitted : null,
-    ready && !!settings.baseUrl && ["推荐", "搜索"].includes(tab)
+    ready && ["推荐", "搜索"].includes(tab)
   );
   useEffect(() => {
     loadState()
@@ -98,12 +107,12 @@ export default function App() {
         setSettings(data.settings);
         setUrl(data.settings.baseUrl);
         setToken(data.settings.token);
+        setCategory(data.settings.category);
         setLibrary(data.library);
         libraryRef.current = data.library;
-        if (!data.settings.baseUrl) setTab("设置");
       })
       .catch(() => {
-        setMessage("本地数据读取失败，请重新设置服务地址");
+        setMessage("本地数据读取失败，将使用默认设置");
         setTab("设置");
       })
       .finally(() => setReady(true));
@@ -202,7 +211,7 @@ export default function App() {
     setConnecting(true);
     setMessage("");
     try {
-      const next = { baseUrl: normalizeBaseUrl(url), token: token.trim() };
+      const next = { baseUrl: normalizeBaseUrl(url), token: token.trim(), category };
       await new BridgeProvider(next).health();
       await saveSettings(next);
       setSettings(next);
@@ -217,6 +226,12 @@ export default function App() {
     } finally {
       setConnecting(false);
     }
+  }
+  async function changeCategory(cat: "short" | "comic") {
+    setCategory(cat);
+    const next = { baseUrl, token, category: cat };
+    await saveSettings(next);
+    setSettings(next);
   }
   function favorite(series: Series) {
     updateLibrary((old) => ({
@@ -334,9 +349,25 @@ export default function App() {
           contentContainerStyle={s.settings}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={s.heroTitle}>连接你的内容服务</Text>
+          <Text style={s.heroTitle}>红果 TV</Text>
           <Text style={s.description}>
-            电视和运行服务的电脑 / NAS 连接同一网络，填入服务启动后显示的地址。
+            直接调用红果接口，无需额外服务器。也可连接自建内容服务。
+          </Text>
+          <Text style={s.label}>内容分类</Text>
+          <View style={s.row}>
+            <Button
+              label="真人剧"
+              primary={category === "short"}
+              onPress={() => changeCategory("short")}
+            />
+            <Button
+              label="漫剧"
+              primary={category === "comic"}
+              onPress={() => changeCategory("comic")}
+            />
+          </View>
+          <Text style={[s.description, { marginTop: 8 }]}>
+            以下为可选：连接自建内容服务。
           </Text>
           <Text style={s.label}>服务地址</Text>
           <TextInput
@@ -444,9 +475,7 @@ export default function App() {
               )}
             </View>
           )}
-          {!settings.baseUrl ? (
-            <Notice message="请先在设置中连接内容服务" />
-          ) : (
+          {
             <TVGrid
               key={
                 tab + ":" + (tab === "搜索" ? submitted + ":" + searchRun : "")
@@ -479,7 +508,7 @@ export default function App() {
                   : "暂无内容"
               }
             />
-          )}
+          }
         </>
       )}
     </View>
