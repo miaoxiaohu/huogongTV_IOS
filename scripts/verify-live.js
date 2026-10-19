@@ -485,6 +485,39 @@ function renditionList(captured) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== the walk again does not double the library ==");
+    {
+        const { CatalogueEntries, CatalogueIndex } = require(path.join(cache, "data/catalogue.js"));
+        const { buildCatalogue } = require(path.join(cache, "data/catalogueBuilder.js"));
+        // The same pages, walked twice, the way a re-walk does. The shows
+        // that come back again must replace the ones already held.
+        const entries = new CatalogueEntries();
+        let requests = 0;
+        for (let pass = 0; pass < 2; pass++) {
+            const result = await buildCatalogue(
+                async (route, page) => {
+                    requests++;
+                    return provider.cataloguePage(route, page);
+                },
+                {
+                    isCancelled: () => requests >= 4,
+                    attempts: 1,
+                }
+            );
+            entries.add(result.shows, "real-drama");
+        }
+        const ids = entries.entries.map((s) => s.id);
+        const unique = new Set(ids);
+        unique.size === ids.length
+            ? ok("the library holds " + ids.length + " distinct shows after two passes")
+            : fail("the library doubled: " + ids.length + " rows, " + unique.size + " shows");
+        const index = new CatalogueIndex(entries.entries, entries.routes);
+        index.size === ids.length
+            ? ok("and the index agrees")
+            : fail("the index says " + index.size + ", the list says " + ids.length);
+    }
+
+    // -----------------------------------------------------------------------
     if (FULL) {
         console.log("== the whole pipeline, end to end ==");
         // Three episodes: the first one, the one whose renditions are mostly
