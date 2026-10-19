@@ -18,6 +18,7 @@ const {
     frameModeInfo,
     normalizeFrameMode,
     normalizeSpeed,
+    nearEnd,
     speedLabel,
 } = require(path.join(cache, "data/playback.js"));
 
@@ -128,8 +129,24 @@ console.log("== the frame mode ==");
     eq(frameModeInfo("fit").hint, "保留比例与全部内容", "the hint");
 }
 
-console.log("== the sleep timer ==");
+console.log("== when the next episode is fetched ==");
 {
+    // The wall-clock time to the end matters, and the speed counts.
+    eq(nearEnd(90, 100, 1), true, "ten seconds left at normal speed");
+    eq(nearEnd(60, 100, 1), false, "forty seconds left is too early");
+    eq(nearEnd(70, 100, 1), true, "thirty seconds left is exactly the moment");
+    eq(nearEnd(70, 100, 2), true, "at double speed the same moment is sooner");
+    eq(nearEnd(80, 100, 2), true, "twenty seconds left at double speed");
+    eq(nearEnd(60, 100, 0.5), false, "at half speed it takes longer in real time");
+    eq(nearEnd(85, 100, 0.5), true, "fifteen seconds left at half speed is the moment");
+    eq(nearEnd(0, 0, 1), false, "no duration");
+    eq(nearEnd(-1, 100, 1), false, "a negative position");
+    eq(nearEnd(100, 100, 1), false, "the end is not before the end");
+    eq(nearEnd(10, 100, 0), false, "a speed of zero");
+    eq(nearEnd(10, 100, Infinity), false, "a speed that is not finite");
+}
+
+console.log("== the sleep timer ==");{
     let now = 1000;
     const clock = () => now;
     const timer = new SleepTimer(clock);

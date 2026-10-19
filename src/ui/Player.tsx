@@ -18,6 +18,7 @@ import {
   PLAYBACK_SPEEDS,
   SleepTimer,
   frameModeInfo,
+  nearEnd,
   normalizeFrameMode,
   normalizeSpeed,
   speedLabel,
@@ -262,6 +263,9 @@ export function Player({
     if (next < 0 || next >= detail.episodes.length) return;
     stopScrub();
     recovery.reset();
+    // The next episode is about to be played, so it must not be prefetched
+    // again.
+    prefetched.current = "";
     save();
     pendingSeek.current = 0;
     setSource(undefined);
@@ -380,6 +384,29 @@ export function Player({
     setPaused(false);
     refresh();
   }
+
+  /**
+   * Fetches the next episode while this one is still playing.
+   *
+   * The file lands in the cache, so the switch is instant instead of a black
+   * screen while the next episode is downloaded and decrypted. It starts
+   * thirty seconds before the end, which is when the bandwidth is free
+   * anyway.
+   */
+  const prefetched = useRef("");
+  useEffect(() => {
+    if (!source || !duration || !speed) return;
+    const next = detail.episodes[index + 1];
+    if (!next) return;
+    if (prefetched.current === next.id) return;
+    if (!nearEnd(position, duration, speed)) return;
+    prefetched.current = next.id;
+    void provider.resolve(next.id).catch(() => {
+      // A failed prefetch is not a failure: the episode is simply downloaded
+      // when the time comes.
+      prefetched.current = "";
+    });
+  }, [position, duration, speed, index, source, provider, detail.episodes]);
   return (
     <View style={s.screen}>
       {source && !error && (

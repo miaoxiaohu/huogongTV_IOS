@@ -65,6 +65,36 @@ export function frameModeInfo(mode: FrameMode): FrameModeInfo {
 }
 
 /**
+ * Whether the next episode should be fetched now.
+ *
+ * The wall-clock time to the end matters: a long episode must not sit on a
+ * speculative download for an hour. The speed is taken into account, so an
+ * episode played at half speed prefetches later - it takes twice as long in
+ * real time to reach the end.
+ *
+ * The positions are in seconds, the way the player counts them.
+ *
+ * Ported from kotlin-tv/core/.../PrefetchPolicy.kt, which counts in
+ * milliseconds.
+ */
+export function nearEnd(
+  position: number,
+  duration: number,
+  speed: number
+): boolean {
+  if (
+    duration <= 0 ||
+    position < 0 ||
+    position >= duration ||
+    !isFinite(speed) ||
+    speed <= 0
+  ) {
+    return false;
+  }
+  return (duration - position) / speed <= 30;
+}
+
+/**
  * The timer that stops the playback after a while.
  *
  * It runs on a clock the caller supplies, so it does not care whether the
