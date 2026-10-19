@@ -79,61 +79,69 @@ export async function prepareLocalMedia(request: MediaRequest): Promise<string> 
   if (await FileSystem.exists(partPath)) await FileSystem.unlink(partPath);
 
   report?.({ percent: 0, message: "正在下载视频" });
-  const result = await FileSystem.fetch(
-    request.url,
-    { method: "GET", headers: request.headers, path: rawPath },
-    (bytesRead, contentLength) => {
-      const percent =
-        contentLength > 0
-          ? Math.min(99, Math.round((bytesRead / contentLength) * 100))
-          : 0;
-      report?.({ percent, message: `正在下载视频 ${percent}%` });
+  try {
+    const result = await FileSystem.fetch(
+      request.url,
+      { method: "GET", headers: request.headers, path: rawPath },
+      (bytesRead, contentLength) => {
+        const percent =
+          contentLength > 0
+            ? Math.min(99, Math.round((bytesRead / contentLength) * 100))
+            : 0;
+        report?.({ percent, message: `正在下载视频 ${percent}%` });
+      }
+    );
+    if (!result.ok) throw new Error(`视频下载失败（HTTP ${result.status}）`);
+
+    const total = (await FileSystem.stat(rawPath)).size;
+    if (total < MIN_PLAYABLE) throw new Error("视频内容为空");
+
+    // Clear content needs no rewriting at all - copy it straight over.
+    if (!request.key) {
+      report?.({ percent: 95, message: "正在准备视频" });
+      await FileSystem.cp(rawPath, partPath);
+      await FileSystem.mv(partPath, outPath);
+      report?.({ percent: 100, message: "准备完成" });
+      return outPath;
     }
-  );
-  if (!result.ok) throw new Error(`视频下载失败（HTTP ${result.status}）`);
 
-  const total = (await FileSystem.stat(rawPath)).size;
-  if (total < MIN_PLAYABLE) throw new Error("视频内容为空");
+    // The sample table lives in the `moov` box right after `ftyp`, so the
+    // first chunk is enough to build it. That same chunk also holds the first
+    // part of the media data, so it has to be decrypted as well.
+    let headerLength = Math.min(total, CHUNK_BYTES);
+    let head = await readBytes(rawPath, 0, headerLength);
+    const moovEnd = headerEnd(head, total);
+    if (moovEnd > head.length) {
+      headerLength = moovEnd;
+      head = await readBytes(rawPath, 0, headerLength);
+    }
+    const prepared = prepare(head, request.key);
+    decryptChunk(prepared.header, 0, prepared.samples, request.key);
 
-  // Clear content needs no rewriting at all - copy it straight over.
-  if (!request.key) {
-    report?.({ percent: 95, message: "正在准备视频" });
-    await FileSystem.cp(rawPath, partPath);
+    await FileSystem.writeFile(partPath, base64Encode(prepared.header), "base64");
+
+    let offset = headerLength;
+    while (offset < total) {
+      const length = Math.min(CHUNK_BYTES, total - offset);
+      const bytes = await readBytes(rawPath, offset, length);
+      decryptChunk(bytes, offset, prepared.samples, request.key);
+      await FileSystem.appendFile(partPath, base64Encode(bytes), "base64");
+      offset += length;
+      const percent = Math.min(99, Math.round((offset / total) * 100));
+      report?.({ percent, message: `正在解密 ${percent}%` });
+    }
+
+    // Only now is the file complete, so it is published under its real name.
     await FileSystem.mv(partPath, outPath);
-    await FileSystem.unlink(rawPath);
     report?.({ percent: 100, message: "准备完成" });
     return outPath;
+  } catch (error) {
+    // A half written file must not be mistaken for a finished one later.
+    if (await FileSystem.exists(partPath)) await FileSystem.unlink(partPath);
+    throw error;
+  } finally {
+    // The encrypted original is worth nothing once the file is written, and
+    // it is the bigger of the two.
+    if (await FileSystem.exists(rawPath)) await FileSystem.unlink(rawPath);
   }
-
-  // The sample table lives in the `moov` box right after `ftyp`, so the first
-  // chunk is enough to build it. That same chunk also holds the first part of
-  // the media data, so it has to be decrypted as well.
-  let headerLength = Math.min(total, CHUNK_BYTES);
-  let head = await readBytes(rawPath, 0, headerLength);
-  const moovEnd = headerEnd(head, total);
-  if (moovEnd > head.length) {
-    headerLength = moovEnd;
-    head = await readBytes(rawPath, 0, headerLength);
-  }
-  const prepared = prepare(head, request.key);
-  decryptChunk(prepared.header, 0, prepared.samples, request.key);
-
-  await FileSystem.writeFile(partPath, base64Encode(prepared.header), "base64");
-
-  let offset = headerLength;
-  while (offset < total) {
-    const length = Math.min(CHUNK_BYTES, total - offset);
-    const bytes = await readBytes(rawPath, offset, length);
-    decryptChunk(bytes, offset, prepared.samples, request.key);
-    await FileSystem.appendFile(partPath, base64Encode(bytes), "base64");
-    offset += length;
-    const percent = Math.min(99, Math.round((offset / total) * 100));
-    report?.({ percent, message: `正在解密 ${percent}%` });
-  }
-
-  // Only now is the file complete, so it is published under its real name.
-  await FileSystem.mv(partPath, outPath);
-  await FileSystem.unlink(rawPath);
-  report?.({ percent: 100, message: "准备完成" });
-  return outPath;
 }

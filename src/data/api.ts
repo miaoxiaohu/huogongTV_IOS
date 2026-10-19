@@ -65,14 +65,6 @@ export class ApiProvider implements ContentProvider {
     this.maxQuality = settings?.maxQuality ?? 540;
   }
 
-  setMaxQuality(value: number): void {
-    this.maxQuality = value;
-  }
-
-  getMaxQuality(): number {
-    return this.maxQuality;
-  }
-
   // -------------------------------------------------------------------------
   // HTTP helpers
   // -------------------------------------------------------------------------
