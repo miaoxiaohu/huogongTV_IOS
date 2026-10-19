@@ -357,6 +357,6 @@ export class ApiProvider implements ContentProvider {
       "854": 480,
       "640": 360,
     };
-    return map[value] ?? parseInt(value) || 0;
+    return map[value] ?? (isNaN(parseInt(value)) ? 0 : parseInt(value));
   }
 }
