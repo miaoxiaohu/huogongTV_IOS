@@ -14,9 +14,12 @@ import {
   Detail,
   Episode,
   Playback,
+  PlaybackProgress,
   Series,
 } from "../domain/model";
 import { sign, newDevice } from "./signer";
+import { decodeBase64Url, decryptUrl, deriveKey } from "./mediaCrypto";
+import { prepareLocalMedia } from "./media";
 
 type SignedRequest = {
   url: string;
@@ -28,15 +31,46 @@ const SITE = "https://hongguoduanju.com";
 const VIDEO_API = "https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/";
 const FETCH_TIMEOUT = 65000;
 
+/**
+ * The CDN rejects requests that do not look like the app's own player.
+ * VendorConstants.VIDEO_UA in the Kotlin.
+ */
+const VIDEO_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)",
+  Referer: "https://novel.snssdk.com/",
+  "Accept-Encoding": "identity",
+};
+
 export type ApiSettings = {
   category: "short" | "comic";
+  /** Highest resolution to use. 1080 is the best the source offers. */
+  maxQuality?: number;
+};
+
+/** A downloadable, still encrypted stream. */
+export type SignedStream = {
+  url: string;
+  key: Uint8Array | null;
+  headers: Record<string, string>;
+  quality: string;
 };
 
 export class ApiProvider implements ContentProvider {
   private category: string;
+  private maxQuality: number;
 
   constructor(settings?: ApiSettings) {
     this.category = settings?.category === "short" ? "real-drama" : "comic-drama";
+    this.maxQuality = settings?.maxQuality ?? 540;
+  }
+
+  setMaxQuality(value: number): void {
+    this.maxQuality = value;
+  }
+
+  getMaxQuality(): number {
+    return this.maxQuality;
   }
 
   // -------------------------------------------------------------------------
@@ -213,16 +247,40 @@ export class ApiProvider implements ContentProvider {
     };
   }
 
-  async resolve(id: string, _fresh = false): Promise<Playback> {
-    // Try signed endpoint first, fall back to web player
+  async resolve(
+    id: string,
+    _fresh = false,
+    onProgress?: (progress: PlaybackProgress) => void
+  ): Promise<Playback> {
+    // The signed player covers every episode. The public plain MP4 is the
+    // fallback: it needs no decryption but only exists for the first three
+    // episodes of a series.
     try {
-      return await this.signedResolve(id);
-    } catch (e) {
-      return this.webResolve(id);
+      const stream = await this.resolveStream(id);
+      const path = await prepareLocalMedia({
+        url: stream.url,
+        key: stream.key,
+        headers: stream.headers,
+        episodeId: id,
+        quality: stream.quality,
+        onProgress,
+      });
+      return { uri: `file://${path}`, headers: {}, quality: stream.quality };
+    } catch (signed) {
+      try {
+        return await this.publicResolve(id);
+      } catch (publicError) {
+        throw signed;
+      }
     }
   }
 
-  private async signedResolve(id: string): Promise<Playback> {
+  /**
+   * Resolves an episode to a downloadable, encrypted stream.
+   * Kept separate from `resolve` so it can be exercised without a file
+   * system - the Node side verification uses this.
+   */
+  async resolveStream(id: string): Promise<SignedStream> {
     const device = newDevice();
     const payload = JSON.stringify({
       biz_param: {
@@ -296,7 +354,8 @@ export class ApiProvider implements ContentProvider {
       const obj = v as any;
       const mainUrl: string = obj.main_url || "";
       if (!mainUrl) continue;
-      // Skip ByteVC2 (no avcC/hvcC record)
+      // ByteVC2 renditions ship no avcC/hvcC record at all, so neither
+      // Android nor iOS finds a video track in them. Only ByteVC1 plays.
       const codec = (obj.codec_type || "").toLowerCase();
       if (codec === "bytevc2" || codec === "bvc2") continue;
 
@@ -313,47 +372,58 @@ export class ApiProvider implements ContentProvider {
 
     if (entries.length === 0) throw new Error("没有可用清晰度");
 
-    // Sort by quality descending
+    // Sort by quality descending, then take the best one that fits the
+    // quality limit.
     entries.sort((a, b) => b.quality - a.quality);
+    const selected =
+      entries.find((entry) => entry.quality <= this.maxQuality) ??
+      entries[entries.length - 1];
 
-    const selected = entries[0];
     let url = this.cleanUrl(selected.obj.main_url);
 
+    // MediaCrypto.decryptUrl - the real CDN url is encrypted with a key
+    // derived from the response's key_seed.
     const keySeed: string = info.key_seed || "";
     if (keySeed) {
-      // MediaCrypto.decryptUrl — simplified; if the seed is there we pass it as header
-      // For now, just use the URL as-is
+      url = decryptUrl(url, decodeBase64Url(keySeed));
+    }
+    if (!url.startsWith("https://") && !url.startsWith("http://")) {
+      throw new Error("播放地址格式异常");
     }
 
+    // MediaCrypto.deriveKey - the AES-CTR key for the sample payloads.
+    const spade: string = selected.obj.spade_a || "";
+    const key = spade ? deriveKey(spade) : null;
+
     return {
-      uri: url,
-      headers: {},
+      url,
+      key,
+      headers: VIDEO_HEADERS,
+      quality: selected.quality > 0 ? `${selected.quality}P` : "auto",
     };
   }
 
-  private async webResolve(id: string): Promise<Playback> {
-    // Fallback: public player page (only first 3 episodes)
-    const match = id.match(/^(\d+)\/(\d+)$/);
-    const seriesId = match?.[1] ?? id;
-    const episodeId = match?.[2] ?? "0";
-    const url = `${SITE}/player/${seriesId}/${episodeId}`;
-    const html = await this.fetchText(url);
-
-    // Try contentUrl first, then main_url
-    let raw =
-      html.match(/"contentUrl"\s*:\s*"([^"]+)"/)?.[1] ||
-      html.match(/"main_url"\s*:\s*"([^"]+)"/)?.[1] ||
-      "";
-
-    // trimEnd() takes no arguments — strip trailing ? and & explicitly.
-    raw = this.cleanUrl(raw)
-      .replace(/([?&])Range=[^&]*/gi, "$1")
-      .replace(/[?&]+$/, "");
-
-    if (!raw.startsWith("https://") && !raw.startsWith("http://")) {
-      throw new Error("播放地址暂不可用");
+  /**
+   * The public player hosts a plain, unencrypted MP4 - but only for the
+   * first three episodes of a series, so it has to be probed.
+   */
+  private async publicResolve(id: string): Promise<Playback> {
+    const url = `${SITE}/video/public/${id}/360p.mp4`;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 20000);
+    try {
+      const response = await fetch(url, {
+        method: "HEAD",
+        headers: { "User-Agent": VIDEO_HEADERS["User-Agent"] },
+        signal: abort.signal,
+      });
+      if (!response.ok) throw new Error("该剧集暂无公开播放资源");
+    } catch (error) {
+      throw new Error("该剧集暂无公开播放资源");
+    } finally {
+      clearTimeout(timer);
     }
-    return { uri: raw, headers: {} };
+    return { uri: url, headers: {}, quality: "360P" };
   }
 
   private qualityNumber(value: string): number {

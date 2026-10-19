@@ -52,10 +52,12 @@ export default function App() {
     baseUrl: "",
     token: "",
     category: "short",
+    maxQuality: 540,
   });
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [category, setCategory] = useState<"short" | "comic">("short");
+  const [maxQuality, setMaxQuality] = useState(540);
   const [library, setLibrary] = useState<Library>({
     favorites: [],
     progress: {},
@@ -94,7 +96,10 @@ export default function App() {
     () =>
       settings.baseUrl
         ? new BridgeProvider(settings)
-        : new ApiProvider({ category: settings.category ?? "short" }),
+        : new ApiProvider({
+            category: settings.category ?? "short",
+            maxQuality: settings.maxQuality ?? 540,
+          }),
     [settings]
   );
   const catalog = useCatalog(
@@ -109,6 +114,7 @@ export default function App() {
         setUrl(data.settings.baseUrl);
         setToken(data.settings.token);
         setCategory(data.settings.category ?? "short");
+        setMaxQuality(data.settings.maxQuality ?? 540);
         setLibrary(data.library);
         libraryRef.current = data.library;
       })
@@ -230,11 +236,15 @@ export default function App() {
   }
   async function changeCategory(cat: "short" | "comic") {
     setCategory(cat);
-    const next = {
-      baseUrl: normalizeBaseUrl(url),
-      token: token.trim(),
-      category: cat,
-    };
+    // Keep the stored service address. The input field may still be empty
+    // because the app works without a server at all.
+    const next = { ...settings, category: cat };
+    await saveSettings(next);
+    setSettings(next);
+  }
+  async function changeQuality(value: number) {
+    setMaxQuality(value);
+    const next = { ...settings, maxQuality: value };
     await saveSettings(next);
     setSettings(next);
   }
@@ -370,6 +380,20 @@ export default function App() {
               primary={category === "comic"}
               onPress={() => changeCategory("comic")}
             />
+          </View>
+          <Text style={[s.description, { marginTop: 8 }]}>
+            清晰度越高，下载和解密的等待越久；网络较慢时可选 360P。
+          </Text>
+          <Text style={s.label}>清晰度</Text>
+          <View style={s.row}>
+            {[360, 540, 720, 1080].map((q) => (
+              <Button
+                key={q}
+                label={`${q}P`}
+                primary={maxQuality === q}
+                onPress={() => changeQuality(q)}
+              />
+            ))}
           </View>
           <Text style={[s.description, { marginTop: 8 }]}>
             以下为可选：连接自建内容服务。

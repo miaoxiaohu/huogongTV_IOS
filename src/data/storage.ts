@@ -19,6 +19,10 @@ export async function loadState(): Promise<{
           data.category === "short" || data.category === "comic"
             ? data.category
             : "short",
+        maxQuality:
+          typeof data.maxQuality === "number" && data.maxQuality >= 360
+            ? data.maxQuality
+            : 540,
       };
   } catch {}
   try {

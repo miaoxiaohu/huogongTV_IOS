@@ -102,29 +102,10 @@ for (const len of [0, 1, 3, 55, 56, 57, 63, 64, 65, 100, 200, 1000]) {
 if (process.argv.includes("--live")) {
     console.log("== live api ==");
     // Transpile the whole src/ tree so relative imports keep working.
-    const SRC = path.join(ROOT, "src");
-    const walk = (dir) => {
-        const files = [];
-        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-            const p = path.join(dir, e.name);
-            if (e.isDirectory()) files.push(...walk(p));
-            else if (/\.tsx?$/.test(e.name)) files.push(p);
-        }
-        return files;
-    };
-    for (const file of walk(SRC)) {
-        const out = babel.transformFileSync(file, {
-            presets: ["module:@react-native/babel-preset"],
-            filename: file,
-            babelrc: false,
-            configFile: false,
-        }).code;
-        const rel = path.relative(SRC, file).replace(/\.tsx?$/, ".js");
-        const dest = path.join(CACHE, rel);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, out, "utf8");
-    }
-    const { ApiProvider } = require(path.join(CACHE, "data/api.js"));
+    const { transpile, stubNativeModules } = require("./transpile");
+    const cache = transpile("signer-verify");
+    stubNativeModules(cache);
+    const { ApiProvider } = require(path.join(cache, "data/api.js"));
 
     (async () => {
         const p = new ApiProvider({ category: "short" });
@@ -148,12 +129,17 @@ if (process.argv.includes("--live")) {
         }
         try {
             if (!firstEpisodeId) throw new Error("no episode id");
-            const pb = await p.resolve(firstEpisodeId);
-            pb.uri && pb.uri.length > 16
-                ? ok("resolve -> signed media url")
-                : fail("resolve -> bad uri");
+            // resolveStream stops before the file system: it proves the
+            // signature, the url decryption and the content key all work.
+            const stream = await p.resolveStream(firstEpisodeId);
+            stream.url && stream.url.startsWith("http")
+                ? ok("resolveStream -> " + stream.quality + " " + stream.url.slice(0, 70) + "...")
+                : fail("resolveStream -> bad url");
+            stream.key && stream.key.length === 16
+                ? ok("resolveStream -> 16 byte content key")
+                : fail("resolveStream -> bad content key");
         } catch (e) {
-            fail("resolve: " + e.message);
+            fail("resolveStream: " + e.message);
         }
         console.log(failures ? "\nFAILED (" + failures + ")" : "\nALL PASS");
         process.exit(failures ? 1 : 0);

@@ -31,16 +31,28 @@ export interface Settings {
   baseUrl: string;
   token: string;
   category?: "short" | "comic";
+  /** Highest video resolution to fetch. 1080 is the best the source offers. */
+  maxQuality?: number;
 }
 export interface Playback {
   uri: string;
   headers: Record<string, string>;
+  /** The quality that was actually selected, e.g. "720P". */
+  quality?: string;
+}
+export interface PlaybackProgress {
+  percent: number;
+  message: string;
 }
 export interface ContentProvider {
   home(page: number): Promise<Series[]>;
   search(query: string, page: number): Promise<Series[]>;
   detail(id: string): Promise<Detail>;
-  resolve(id: string, fresh?: boolean): Promise<Playback>;
+  resolve(
+    id: string,
+    fresh?: boolean,
+    onProgress?: (progress: PlaybackProgress) => void
+  ): Promise<Playback>;
 }
 export function resumeTarget(
   detail: Detail,

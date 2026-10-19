@@ -57,6 +57,7 @@ export function Player({
   const [paused, setPaused] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("正在准备播放…");
   const [position, setPosition] = useState(initialPosition);
   const [duration, setDuration] = useState(0);
   const [retry, setRetry] = useState(0);
@@ -92,12 +93,15 @@ export function Player({
     setSource(undefined);
     setError("");
     setBuffering(false);
+    setStatus("正在准备播放…");
     const request = test
       ? Promise.resolve({
           uri: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
           headers: {},
         })
-      : provider.resolve(episode.id, retry > 0);
+      : provider.resolve(episode.id, retry > 0, (progress) => {
+          if (live) setStatus(progress.message);
+        });
     request
       .then((value) => {
         if (live) setSource(value);
@@ -317,7 +321,7 @@ export function Player({
         {error ? (
           <Notice message={error} retry={refresh} />
         ) : !source ? (
-          <Text style={s.buffer}>正在准备播放…</Text>
+          <Text style={s.buffer}>{status}</Text>
         ) : buffering ? (
           <Text style={s.buffer}>正在缓冲…</Text>
         ) : finished ? (
@@ -352,7 +356,9 @@ export function Player({
               {clock(position)} / {clock(duration)}
               {paused ? " · 已暂停" : ""}
             </Text>
-            <Text style={s.subtitle}>原比例 · 自动连播</Text>
+            <Text style={s.subtitle}>
+              {source?.quality ? `${source.quality} · ` : ""}原比例 · 自动连播
+            </Text>
           </View>
           {panel ? (
             <TVFocusGuideView
