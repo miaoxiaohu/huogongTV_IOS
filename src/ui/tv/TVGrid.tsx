@@ -8,6 +8,7 @@ import React, {
 import { FlatList, Text, useWindowDimensions, View } from "react-native";
 import { Series } from "../../domain/model";
 import { Button, Card, Notice, palette } from "../components";
+import { focusTV } from "./compat";
 import { restoredIndex } from "./layout";
 
 export type GridPosition = { id?: string; index: number };
@@ -73,7 +74,7 @@ export const TVGrid = forwardRef<
     reveal(focusIndex.current);
     const node = nodes.current.get(items[focusIndex.current]?.id);
     if (node) {
-      node.requestTVFocus();
+      focusTV(node);
       restoring.current = false;
     }
   }

@@ -345,7 +345,10 @@ export class ApiProvider implements ContentProvider {
       html.match(/"main_url"\s*:\s*"([^"]+)"/)?.[1] ||
       "";
 
-    raw = this.cleanUrl(raw).replace(/([?&])Range=[^&]*/gi, "$1").trimEnd("?", "&");
+    // trimEnd() takes no arguments — strip trailing ? and & explicitly.
+    raw = this.cleanUrl(raw)
+      .replace(/([?&])Range=[^&]*/gi, "$1")
+      .replace(/[?&]+$/, "");
 
     if (!raw.startsWith("https://") && !raw.startsWith("http://")) {
       throw new Error("播放地址暂不可用");

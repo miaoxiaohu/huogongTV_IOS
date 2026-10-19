@@ -4,12 +4,11 @@ import {
   BackHandler,
   StyleSheet,
   Pressable,
-  TVFocusGuideView,
   useWindowDimensions,
   Text,
   View,
-  useTVEventHandler,
 } from "react-native";
+import { TVFocusGuideView, focusTV, useTVEventHandler } from "./tv/compat";
 import Video, { VideoRef } from "react-native-video";
 import { ContentProvider, Detail, Playback, Progress } from "../domain/model";
 import { Button, Notice, palette } from "./components";
@@ -51,7 +50,7 @@ export function Player({
   }
   function closePanel() {
     setPanel(false);
-    requestAnimationFrame(() => main.current?.requestTVFocus());
+    requestAnimationFrame(() => focusTV(main.current));
   }
   const [index, setIndex] = useState(initialIndex);
   const [source, setSource] = useState<Playback>();

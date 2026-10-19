@@ -27,202 +27,195 @@ function decodeBase64(s: string): Uint8Array {
 }
 
 function md5(input: Uint8Array): Uint8Array {
-  // Fast MD5 implementation for the digest calls we need.
-  function rotl(x: number, n: number) {
-    return ((x << n) | (x >>> (32 - n))) >>> 0;
-  }
-  function addN(a: number, b: number) {
-    return (a + b) >>> 0;
-  }
-  function ff(a: number, b: number, c: number, d: number, x: number, t: number) {
-    return addN(rotl(addN(a, addN(addN(b & c, (~b) & d), x)), t), t);
-  }
-  function gg(a: number, b: number, c: number, d: number, x: number, t: number) {
-    return addN(rotl(addN(a, addN(addN(b & c, (~d) & b), x)), t), t);
-  }
-  function hh(a: number, b: number, c: number, d: number, x: number, t: number) {
-    return addN(rotl(addN(a, addN(b ^ c ^ d, x)), t), t);
-  }
-  function ii(a: number, b: number, c: number, d: number, x: number, t: number) {
-    return addN(rotl(addN(a, addN(c, (b | ~d) >>> 0), x)), t);
-  }
+  // RFC 1321 MD5. Must match java.security.MessageDigest("MD5") byte for byte.
+  const S = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14,
+    20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16,
+    23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10,
+    15, 21, 6, 10, 15, 21,
+  ];
+  const K = new Array(64);
+  for (let i = 0; i < 64; i++)
+    K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000);
 
-  let M: number[] = [];
-  const padLen = 64 - ((input.length + 9) % 64);
-  const data = new Uint8Array(input.length + 1 + padLen + 8);
+  const rol = (x: number, n: number) => ((x << n) | (x >>> (32 - n))) >>> 0;
+  const add = (...vals: number[]) => {
+    let s = 0;
+    for (const v of vals) s = (s + (v >>> 0)) >>> 0;
+    return s;
+  };
+  const cmn = (
+    q: number,
+    a: number,
+    b: number,
+    x: number,
+    s: number,
+    t: number
+  ) => add(rol(add(a, add(q, add(x, t))), s), b);
+
+  const len = input.length;
+  const padLen = ((55 - len) % 64 + 64) % 64;
+  const data = new Uint8Array(len + 1 + padLen + 8);
   data.set(input);
-  data[input.length] = 0x80;
-  const bits = input.length * 8;
-  data[data.length - 8] = bits & 255;
-  data[data.length - 7] = (bits >>> 8) & 255;
-  data[data.length - 6] = (bits >>> 16) & 255;
-  data[data.length - 5] = (bits >>> 24) & 255;
-  data[data.length - 4] = (bits >>> 32) & 255;
-  data[data.length - 3] = (bits >>> 40) & 255;
-  data[data.length - 2] = (bits >>> 48) & 255;
-  data[data.length - 1] = (bits >>> 56) & 255;
+  data[len] = 0x80;
+  const bits = len * 8;
+  for (let i = 0; i < 8; i++)
+    data[data.length - 8 + i] = Math.floor(bits / Math.pow(2, 8 * i)) & 255;
 
-  for (let i = 0; i < data.length; i += 64) {
-    M = [];
+  let A = 0x67452301;
+  let B = 0xefcdab89;
+  let C = 0x98badcfe;
+  let D = 0x10325476;
+  const M = new Array(16);
+
+  for (let off = 0; off < data.length; off += 64) {
     for (let j = 0; j < 16; j++) {
       let x = 0;
-      for (let k = 0; k < 4; k++) x = (x << 8) | data[i + j * 4 + k];
-      M.push(x);
+      // MD5 message words are little-endian.
+      for (let k = 0; k < 4; k++)
+        x = (x | (data[off + j * 4 + k] << (8 * k))) >>> 0;
+      M[j] = x;
     }
-    let A = 0x67452301;
-    let B = 0xefcdab89;
-    let C = 0x98badcfe;
-    let D = 0x10325476;
-    const S = [
-      7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14,
-      20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16,
-      23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10,
-      15, 21, 6, 10, 15, 21,
-    ];
-    const K = new Array(64);
-    for (let i = 0; i < 64; i++)
-      K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000);
-
+    let a = A;
+    let b = B;
+    let c = C;
+    let d = D;
     for (let i = 0; i < 64; i++) {
-      let f: number, g: number;
-      if (i < 16) {
-        f = ff(B, C, D, A, M[i], K[i]);
-        g = i;
-      } else if (i < 32) {
-        f = gg(B, C, D, A, M[(5 * i + 1) % 16], K[i]);
-        g = (5 * i + 1) % 16;
-      } else if (i < 48) {
-        f = hh(B, C, D, A, M[(3 * i + 5) % 16], K[i]);
-        g = (3 * i + 5) % 16;
-      } else {
-        f = ii(B, C, D, A, M[(7 * i) % 16], K[i]);
-        g = (7 * i) % 16;
-      }
-      const temp = D;
-      D = C;
-      C = B;
-      B = addN(B, rotl(addN(A, f, K[i], M[g]), S[i]));
-      A = temp;
+      let f: number;
+      if (i < 16)
+        f = cmn((b & c) | (~b & d), a, b, M[i], S[i], K[i]);
+      else if (i < 32)
+        f = cmn((b & d) | (c & ~d), a, b, M[(5 * i + 1) % 16], S[i], K[i]);
+      else if (i < 48)
+        f = cmn(b ^ c ^ d, a, b, M[(3 * i + 5) % 16], S[i], K[i]);
+      else f = cmn(c ^ (b | ~d), a, b, M[(7 * i) % 16], S[i], K[i]);
+      const tmp = d;
+      d = c;
+      c = b;
+      b = f;
+      a = tmp;
     }
-    A = addN(A, 0x67452301);
-    B = addN(B, 0xefcdab89);
-    C = addN(C, 0x98badcfe);
-    D = addN(D, 0x10325476);
+    A = add(A, a);
+    B = add(B, b);
+    C = add(C, c);
+    D = add(D, d);
+  }
 
-    // big-endian 32-bit output
-    const res = new Uint8Array(16);
-    const vals = [A, B, C, D];
-    for (let i = 0; i < 4; i++) {
-      res[i * 4] = (vals[i] >>> 24) & 255;
-      res[i * 4 + 1] = (vals[i] >>> 16) & 255;
-      res[i * 4 + 2] = (vals[i] >>> 8) & 255;
-      res[i * 4 + 3] = vals[i] & 255;
-    }
-    return res;
+  const res = new Uint8Array(16);
+  const vals = [A, B, C, D];
+  for (let i = 0; i < 4; i++) {
+    // MD5 serialises each 32-bit word little-endian.
+    res[i * 4] = vals[i] & 255;
+    res[i * 4 + 1] = (vals[i] >>> 8) & 255;
+    res[i * 4 + 2] = (vals[i] >>> 16) & 255;
+    res[i * 4 + 3] = (vals[i] >>> 24) & 255;
+  }
+  return res;
 }
 
 // SM3: Chinese national standard hash function
-function sm3(data: Uint8Array): Uint8Array {
-  function rotl(x: number, n: number) {
-    return ((x << n) | (x >>> (32 - n))) >>> 0;
-  }
-  function addN(a: number, b: number) {
-    return (a + b) >>> 0;
-  }
-  function u32(x: number) {
-    return x >>> 0;
-  }
-  function ff(x: number, y: number, z: number) {
-    return u32(x ^ y ^ z);
-  }
-  function gg(x: number, y: number, z: number) {
-    return u32((x & y) | (~x & z));
-  }
-  function p0(x: number) {
-    return u32(x ^ rotl(x, 9) ^ rotl(x, 17));
-  }
-  function p1(x: number) {
-    return u32(x ^ rotl(x, 15) ^ rotl(x, 23));
-  }
-  function t(j: number) {
-    return j < 16 ? 0x79cc4519 : 0x7a879d8a;
-  }
 
-  const iv = [
+function sm3(data: Uint8Array): Uint8Array {
+  // GB/T 32905-2016 SM3. Must match org.bouncycastle.crypto.digests.SM3Digest.
+  const rol = (x: number, n: number) => {
+    const s = n & 31;
+    return ((x << s) | (x >>> (32 - s))) >>> 0;
+  };
+  const u32 = (x: number) => x >>> 0;
+  const add = (...vals: number[]) => {
+    let s = 0;
+    for (const v of vals) s = (s + (v >>> 0)) >>> 0;
+    return s;
+  };
+  // P0(X) = X xor (X <<< 9) xor (X <<< 17)
+  const p0 = (x: number) => u32(x ^ rol(x, 9) ^ rol(x, 17));
+  // P1(X) = X xor (X <<< 15) xor (X <<< 23)
+  const p1 = (x: number) => u32(x ^ rol(x, 15) ^ rol(x, 23));
+
+  const len = data.length;
+  const bitLen = len * 8;
+  // Zero bytes after the 0x80 marker so the total is a multiple of 64 bytes.
+  const padLen = ((55 - len) % 64 + 64) % 64;
+  const padded = new Uint8Array(len + 1 + padLen + 8);
+  padded.set(data);
+  padded[len] = 0x80;
+  for (let i = 0; i < 8; i++)
+    padded[padded.length - 1 - i] =
+      Math.floor(bitLen / Math.pow(2, 8 * i)) & 255;
+
+  const V = new Uint32Array([
     0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa,
     0xe38dee4d, 0xb0fb0e4e,
-  ];
+  ]);
+  const W = new Uint32Array(68);
+  const W1 = new Uint32Array(64);
 
-  function fillBlock(msg: Uint8Array): number[] {
-    const n = Math.ceil(msg.length / 64);
-    const v: number[][] = [];
-    let off = 0;
-    for (let i = 0; i < n; i++) {
-      const w: number[] = [];
-      for (let j = 0; j < 16; j++) {
-        let x = 0;
-        for (let k = 0; k < 4; k++) x = (x << 8) | msg[off++];
-        w.push(x >>> 0);
-      }
-      for (let j = 16; j < 68; j++) {
-        w.push(
-          u32(
-            p1(
-              w[j - 16] ^
-                w[j - 9] ^
-                rotl(w[j - 3], 15)
-            ) ^
-              rotl(w[j - 13], 7) ^
-              w[j - 6]
-          )
-        );
-      }
-      const w1: number[] = [];
-      for (let j = 0; j < 64; j++) {
-        w1.push(u32(w[j] ^ w[j + 4]));
-      }
-      let vv = iv.map((x) => x);
-      for (let j = 0; j < 64; j++) {
-        const ss1 = rotl(
-          u32(rotl(vv[0], 12) + vv[4] + rotl(t(j), j & 31)),
-          7
-        );
-        const ss2 = ss1 ^ rotl(vv[0], 12);
-        const tt1 = u32(
-          addN(addN(ff(vv[0], vv[1], vv[2]), vv[3]), ss2, w1[j]) +
-            addN(gg(vv[4], vv[5], vv[6]), ss1, w[j])
-        );
-        const tt2 = u32(
-          addN(hh(vv[0], vv[1], vv[2]), vv[3], ss1) +
-            addN(gg(vv[4], vv[5], vv[6]), ss2, w1[j])
-        );
-        vv = [tt1, vv[0], rotl(vv[1], 9), vv[2], u32(vv[3] ^ ss1), vv[4], rotl(vv[5], 19), vv[6], u32(vv[7] ^ ss2)];
-      }
-      v.push(vv);
+  for (let off = 0; off < padded.length; off += 64) {
+    // W0..W15 from the block, big-endian.
+    for (let j = 0; j < 16; j++) {
+      let x = 0;
+      for (let k = 0; k < 4; k++)
+        x = ((x << 8) | padded[off + j * 4 + k]) >>> 0;
+      W[j] = x;
     }
-    return v[n - 1];
+    // W16..W67
+    for (let j = 16; j < 68; j++) {
+      W[j] = u32(
+        p1(u32((W[j - 16] ^ W[j - 9]) ^ rol(W[j - 3], 15))) ^
+          rol(W[j - 13], 7) ^
+          W[j - 6]
+      );
+    }
+    // W'[j] = W[j] xor W[j+4]
+    for (let j = 0; j < 64; j++) W1[j] = u32(W[j] ^ W[j + 4]);
+
+    let A = V[0];
+    let B = V[1];
+    let C = V[2];
+    let D = V[3];
+    let E = V[4];
+    let F = V[5];
+    let G = V[6];
+    let H = V[7];
+
+    for (let j = 0; j < 64; j++) {
+      const T = j < 16 ? 0x79cc4519 : 0x7a879d8a;
+      const SS1 = rol(u32(rol(A, 12) + E + rol(T, j)), 7);
+      const SS2 = u32(SS1 ^ rol(A, 12));
+      // FF / GG are round dependent: XOR for the first 16 rounds, then the
+      // boolean forms for the remaining 48.
+      const ff =
+        j < 16 ? u32(A ^ B ^ C) : u32((A & B) | (A & C) | (B & C));
+      const gg =
+        j < 16 ? u32(E ^ F ^ G) : u32((E & F) | (~E & G));
+      const TT1 = u32(add(ff, D, SS2, W1[j]));
+      const TT2 = u32(add(gg, H, SS1, W[j]));
+      D = C;
+      C = rol(B, 9);
+      B = A;
+      A = TT1;
+      H = G;
+      G = rol(F, 19);
+      F = E;
+      E = p0(TT2);
+    }
+
+    V[0] = u32(V[0] ^ A);
+    V[1] = u32(V[1] ^ B);
+    V[2] = u32(V[2] ^ C);
+    V[3] = u32(V[3] ^ D);
+    V[4] = u32(V[4] ^ E);
+    V[5] = u32(V[5] ^ F);
+    V[6] = u32(V[6] ^ G);
+    V[7] = u32(V[7] ^ H);
   }
 
-  function pad(msg: Uint8Array): Uint8Array {
-    const bitLen = msg.length * 8;
-    const k = (128 - ((bitLen + 9) % 128)) % 128;
-    const padded = new Uint8Array(Math.ceil((bitLen + 9 + k) / 8));
-    padded.set(msg);
-    padded[msg.length] = 0x80;
-    const bits = new Uint8Array(8);
-    for (let i = 0; i < 8; i++)
-      bits[7 - i] = (bitLen >>> (i * 8)) & 255;
-    padded.set(bits, padded.length - 8);
-    return padded;
-  }
-
-  const finalV = fillBlock(pad(data));
   const result = new Uint8Array(32);
   for (let i = 0; i < 8; i++) {
-    result[i * 4] = (finalV[i] >>> 24) & 255;
-    result[i * 4 + 1] = (finalV[i] >>> 16) & 255;
-    result[i * 4 + 2] = (finalV[i] >>> 8) & 255;
-    result[i * 4 + 3] = finalV[i] & 255;
+    result[i * 4] = (V[i] >>> 24) & 255;
+    result[i * 4 + 1] = (V[i] >>> 16) & 255;
+    result[i * 4 + 2] = (V[i] >>> 8) & 255;
+    result[i * 4 + 3] = V[i] & 255;
   }
   return result;
 }
@@ -237,6 +230,10 @@ function u32(x: number) {
 
 function ror(v: number, n: number) {
   return u32((v >>> n) | (v << (32 - n)));
+}
+
+function rol(v: number, n: number) {
+  return u32((v << n) | (v >>> (32 - n)));
 }
 
 function le32(n: number): Uint8Array {
@@ -278,8 +275,9 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
 }
 
 function xor(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const r = new Uint8Array(Math.min(a.length, b.length));
-  for (let i = 0; i < r.length; i++) r[i] = a[i] ^ b[i];
+  // Kotlin: ByteArray(a.size) { a[it].u() xor b[it % b.size].u() }
+  const r = new Uint8Array(a.length);
+  for (let i = 0; i < r.length; i++) r[i] = a[i] ^ b[i % b.length];
   return r;
 }
 
@@ -583,8 +581,12 @@ function proto(...fields: Field[]): Uint8Array {
 }
 
 function deviceProto(device: Record<string, string>): Uint8Array {
-  const f = (tag: number, value: any, type = "string") =>
-    proto({ tag, value, type });
+  // `f` builds a field descriptor; proto() encodes it.
+  const f = (tag: number, value: any, type = "string"): Field => ({
+    tag,
+    value,
+    type,
+  });
   return proto(
     f(1, 1, "sint"),
     f(2, 2, "sint"),
@@ -659,8 +661,9 @@ function xmxor(data: Uint8Array, key: Uint8Array): Uint8Array {
 
 function branch(query: Uint8Array, body: Uint8Array | null, ts: number): number {
   const bodyMd5 = body ? digest("MD5", body) : new Uint8Array(16);
-  const ivVal = getIv(getIv(getIv(0x20230928, query), bodyMd5), le32(ts));
-  return (ivVal >>> 0) & 15;
+  // Signer.branch() hashes the query with SM3 before deriving the branch.
+  const ivVal = getIv(getIv(getIv(0x20230928, sm3(query)), bodyMd5), le32(ts));
+  return ((ivVal >>> 0) & 15) % 3;
 }
 
 function sumMd5(data: Uint8Array): number {
@@ -676,18 +679,6 @@ function sumMd5(data: Uint8Array): number {
     check = (check ^ temp) >>> 0;
   }
   return ((check | 4) ^ 0x1000000) >>> 0;
-}
-
-function le32(n: number): Uint8Array {
-  return new Uint8Array([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]);
-}
-
-function be32(n: number): Uint8Array {
-  return new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
-}
-
-function be32n(n: number): Uint8Array {
-  return new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
 }
 
 function hashF13(
@@ -720,24 +711,20 @@ function hashF13(
   const hexTail = hex("00000000000001a0");
   const data = concat(query, body, le32(ts), pad, hexTail);
 
-  const di: Int32Array = new Int32Array(128);
-  for (let i = 0; i < 128; i++) {
-    if (i < data.length - 3) {
-      let x = 0;
-      for (let k = 0; k < 4; k++) x = (x << 8) | (data[i * 4 + k] & 255);
-      di[i] = x;
-    }
+  // Kotlin builds `di` as a growable list: the 16 big-endian words of `data`
+  // followed by 112 expanded words appended one by one.
+  const di: number[] = [];
+  for (let i = 0; i + 3 < data.length; i += 4) {
+    let x = 0;
+    for (let k = 0; k < 4; k++) x = (x << 8) | (data[i + k] & 255);
+    di.push(x | 0);
   }
   for (let i = 0; i < 112; i++) {
     const x = di[i + 1];
     const y = di[i + 14];
-    const shiftAmt = countLow;
-    const x1 =
-      ror(x, 14) ^ ror(x, 25) ^ (x >>> 3);
-    const y1 =
-      ror(y, 13) ^ ror(y, 15) ^ (y >>> 10);
-    di[i + 128] =
-      ((di[i] + di[i + 9] + x1 + y1) >>> 0);
+    const x1 = rol(x, 14) ^ rol(x, 25) ^ (x >>> 3);
+    const y1 = rol(y, 13) ^ rol(y, 15) ^ (y >>> 10);
+    di.push((di[i] + di[i + 9] + x1 + y1) | 0);
   }
 
   const initArr = [
@@ -767,12 +754,13 @@ function hashF13(
       (d[chosenArr[2]] & d[chosenArr[6]]) |
       ((d[chosenArr[2]] | d[chosenArr[6]]) & d[chosenArr[7]]);
     const old = d[chosenArr[9]];
-    d.unshift(d.pop()!);
+    // Kotlin: d.add(0, d.removeAt(7)) — element 7 moves to the front.
+    d.unshift(d.splice(7, 1)[0]);
     d[chosenArr[10]] = (n5 + n6 + n4) >>> 0;
     d[chosenArr[8]] = ((old + n4) >>> 0);
   }
 
-  let ret = new Uint8Array(0);
+  let ret: Uint8Array = new Uint8Array(0);
   for (let i = 0; i < 8; i++) {
     ret = concat(ret, be32((d[i] + initial[i]) >>> 0));
   }
@@ -804,14 +792,16 @@ function gorgon(
   let j = 0;
   for (let i = 0; i < 256; i++) {
     j = (j + s[i] + key[i & 7]) & 255;
-    [s[i], s[j]] = [s[j], s[i]];
+    // Kotlin assigns s[i] = s[j]; it is not a swap.
+    s[i] = s[j];
   }
   j = 0;
   const out = new Uint8Array(input.length);
   for (let n = 0; n < input.length; n++) {
     const i = n + 1;
-    j = (j + s[i & 255]) & 255;
-    const y = s[(j) & 255];
+    j = j + s[i & 255];
+    const y = s[j & 255];
+    s[i & 255] = y;
     out[n] = ((input[n] ^ s[(y + y) & 255])) & 255;
   }
   for (let i = 0; i < out.length; i++) {
@@ -911,7 +901,8 @@ function medusa(
     concat(hex("4001000000000000"), xoredMsg)
   ).reverse();
   for (let i = 0; i < transformed.length; i++) {
-    transformed[i] ^= seed[i & 3];
+    // Kotlin uses seed[i.inv() and 3].
+    transformed[i] ^= seed[(~i) & 3];
   }
   const check =
     (((querySm3[0] & 63) << 14) | 0x18000001 | ((queryBodyTs[0] & 63) << 8)) >>> 0;
@@ -934,9 +925,16 @@ function medusa(
   );
 
   const versionBytes = hex("03000000f7e85ffad7d7dc3bd62ac87057cf6118");
-  let prefix = new Uint8Array(0);
+  let prefix: Uint8Array = new Uint8Array(0);
   for (let i = 0; i < 20; i += 4) {
-    prefix = concat(prefix, le32((be32n(versionBytes[i / 4] >>> 0)[0] << 24 | (versionBytes[i / 4 + 1] >>> 0) << 16 | (versionBytes[i / 4 + 2] >>> 0) << 8 | (versionBytes[i / 4 + 3] >>> 0) ^ ts) >>> 0));
+    // Kotlin reads versionBytes.i32(i, true) — little-endian.
+    const word =
+      (versionBytes[i] |
+        (versionBytes[i + 1] << 8) |
+        (versionBytes[i + 2] << 16) |
+        (versionBytes[i + 3] << 24)) >>>
+      0;
+    prefix = concat(prefix, le32((word ^ ts) >>> 0));
   }
   const finalBytes = concat(
     prefix,
@@ -946,25 +944,47 @@ function medusa(
   return btoa(String.fromCharCode(...finalBytes));
 }
 
+// 64-bit helpers — the Kotlin side works on java.lang.Long for helios.
+const U64 = (1n << 64n) - 1n;
+function ror64(v: bigint, n: bigint): bigint {
+  return ((v >> n) | (v << (64n - n))) & U64;
+}
+function le64Bytes(v: bigint): Uint8Array {
+  const out = new Uint8Array(8);
+  let x = v & U64;
+  for (let i = 0; i < 8; i++) {
+    out[i] = Number(x & 0xffn);
+    x >>= 8n;
+  }
+  return out;
+}
+function i64le(at: number, data: Uint8Array): bigint {
+  let x = 0n;
+  for (let k = 0; k < 8; k++) x |= BigInt(data[at + k]) << BigInt(8 * k);
+  return x & U64;
+}
+
 function helios(ts: number): string {
   const random = rand();
   const md5Out = digest("MD5", concat(le32(random), new TextEncoder().encode("8662")));
   const hexStr = bytesToHex(md5Out);
-  const words: number[] = [];
+  // ascii.i64(it * 8, true) — little-endian 64-bit words of the hex text.
+  const words: bigint[] = [];
   for (let i = 0; i < 4; i++) {
-    let x = 0;
-    for (let j = 0; j < 8; j++) x = (x << 8) | (hexStr.charCodeAt(i * 8 + j * 2) || 0);
-    words.push(x);
+    words.push(i64le(i * 8, new TextEncoder().encode(hexStr)));
   }
-  const table: number[] = [words[0]];
-  let b0 = words[1];
-  let b8 = words[2];
+  const table: bigint[] = [words[0]];
+  // b0 = words.removeAt(0); b8 = words.removeAt(0)  ->  queue holds the rest.
+  let b0 = words[0];
+  let b8 = words[1];
+  const queue: bigint[] = [words[2], words[3]];
   for (let i = 0; i < 34; i++) {
-    const x8 = ((b8 >>> 0) + (b0 >>> 0)) ^ i;
+    let x8 = ((ror64(b8, 8n) + b0) & U64) ^ BigInt(i);
+    queue.push(x8 & U64);
+    x8 = (x8 ^ ror64(b0, 61n)) & U64;
     table.push(x8);
-    b0 = x8 ^ (((b0 >>> 0) >>> 61) | ((b0 << 3) >>> 0));
-    table.push(b0);
-    b8 = table.shift()!;
+    b0 = x8;
+    b8 = queue.shift()!;
   }
 
   const textBytes = new TextEncoder().encode(`${ts}-1588093228-8662`);
@@ -975,31 +995,15 @@ function helios(ts: number): string {
 
   let output = le32(random);
   for (let at = 0; at < padded.length; at += 16) {
-    let a = 0,
-      b = 0;
-    for (let k = 0; k < 8; k++) {
-      a = (a << 8) | padded[at + k];
-      b = (b << 8) | padded[at + 8 + k];
-    }
+    let a = i64le(at, padded);
+    let b = i64le(at + 8, padded);
     for (let i = 0; i < 34; i++) {
-      const tbl = table[i] >>> 0;
-      b = tbl ^ ((a + ((b >>> 0) >>> 8)) >>> 0);
-      a = b ^ (((a >>> 0) >>> 61) | ((a << 3) >>> 0));
+      b = (table[i] ^ ((a + ror64(b, 8n)) & U64)) & U64;
+      a = (b ^ ror64(a, 61n)) & U64;
     }
-    output = concat(output, le64(a), le64(b));
+    output = concat(output, le64Bytes(a), le64Bytes(b));
   }
   return btoa(String.fromCharCode(...output));
-}
-
-function be32n(n: number): Uint8Array {
-  return new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
-}
-
-function le64(n: number): Uint8Array {
-  return new Uint8Array([
-    n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255,
-    (n >>> 32) & 255, (n >>> 40) & 255, (n >>> 48) & 255, (n >>> 56) & 255,
-  ]);
 }
 
 function ladon(ts: number): string {

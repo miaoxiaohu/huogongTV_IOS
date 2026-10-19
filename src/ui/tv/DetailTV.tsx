@@ -4,9 +4,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TVFocusGuideView,
   View,
 } from "react-native";
+import { TVFocusGuideView } from "./compat";
 import { Detail, Progress, resumeTarget } from "../../domain/model";
 import { Button, palette } from "../components";
 import { EPISODE_GROUP_SIZE } from "./layout";

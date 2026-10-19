@@ -28,6 +28,7 @@ import {
   normalizeBaseUrl,
 } from "./src/domain/model";
 import { Button, Notice, palette } from "./src/ui/components";
+import { focusTV } from "./src/ui/tv/compat";
 import { Player } from "./src/ui/Player";
 import { DetailTV } from "./src/ui/tv/DetailTV";
 import { GridHandle, GridPosition, TVGrid } from "./src/ui/tv/TVGrid";
@@ -93,7 +94,7 @@ export default function App() {
     () =>
       settings.baseUrl
         ? new BridgeProvider(settings)
-        : new ApiProvider({ category: settings.category }),
+        : new ApiProvider({ category: settings.category ?? "short" }),
     [settings]
   );
   const catalog = useCatalog(
@@ -107,7 +108,7 @@ export default function App() {
         setSettings(data.settings);
         setUrl(data.settings.baseUrl);
         setToken(data.settings.token);
-        setCategory(data.settings.category);
+        setCategory(data.settings.category ?? "short");
         setLibrary(data.library);
         libraryRef.current = data.library;
       })
@@ -182,14 +183,14 @@ export default function App() {
       if (focusArea === "content") {
         grid.current?.top();
         setRestoreGrid(false);
-        nav.current.get(tab)?.requestTVFocus();
+        focusTV(nav.current.get(tab));
         setFocusArea("nav");
         return true;
       }
       if (tab !== "推荐" && settings.baseUrl) {
         changeTab("推荐");
         setRestoreGrid(false);
-        requestAnimationFrame(() => nav.current.get("推荐")?.requestTVFocus());
+        requestAnimationFrame(() => focusTV(nav.current.get("推荐")));
         return true;
       }
       return false;
@@ -229,7 +230,11 @@ export default function App() {
   }
   async function changeCategory(cat: "short" | "comic") {
     setCategory(cat);
-    const next = { baseUrl, token, category: cat };
+    const next = {
+      baseUrl: normalizeBaseUrl(url),
+      token: token.trim(),
+      category: cat,
+    };
     await saveSettings(next);
     setSettings(next);
   }
