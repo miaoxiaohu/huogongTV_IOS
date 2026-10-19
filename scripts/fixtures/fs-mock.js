@@ -56,6 +56,21 @@ module.exports = {
     cp: async (src, dst) => fs.copyFileSync(src, dst),
     mv: async (src, dst) => fs.renameSync(src, dst),
     unlink: async (p) => { if (fs.existsSync(p)) fs.unlinkSync(p); },
+    ls: async (p) => {
+      const out = [];
+      for (const name of fs.readdirSync(p)) {
+        const full = path.join(p, name);
+        const stat = fs.statSync(full);
+        out.push({
+          name,
+          path: full,
+          size: stat.size,
+          mtime: stat.mtimeMs,
+          type: stat.isDirectory() ? "directory" : "file",
+        });
+      }
+      return out;
+    },
   },
 };
 `,

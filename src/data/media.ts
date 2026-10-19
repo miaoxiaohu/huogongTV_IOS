@@ -25,6 +25,64 @@ const CHUNK_BYTES = 512 * 1024;
 /** Anything smaller than this is not a playable video. */
 const MIN_PLAYABLE = 1024;
 
+/**
+ * How much the media cache may hold.
+ *
+ * The app has to write every episode to a file: AVPlayer cannot read an
+ * encrypted stream and cannot decrypt one either. Without a limit the cache
+ * would grow by an episode per episode watched, and a whole series is over a
+ * gigabyte.
+ */
+export const MEDIA_CACHE_BYTES = 256 * 1024 * 1024;
+
+/** How many episodes the cache keeps, whatever their size. */
+export const MEDIA_CACHE_FILES = 16;
+
+/**
+ * Deletes the oldest episodes until the cache is small enough again.
+ *
+ * The files in `keep` are never deleted - that is the one being played, and
+ * a file that disappears under the player is a broken playback.
+ *
+ * @returns how many files were deleted.
+ */
+export async function pruneMediaCache(
+  dir: string,
+  keep: string[] = []
+): Promise<number> {
+  let entries: any[] = [];
+  try {
+    entries = await FileSystem.ls(dir);
+  } catch {
+    return 0;
+  }
+  const keepSet = new Set(keep);
+  const files = entries
+    .filter(
+      (entry: any) =>
+        entry &&
+        entry.type === "file" &&
+        String(entry.name || "").startsWith("play-") &&
+        String(entry.name || "").endsWith(".mp4")
+    )
+    .sort((a: any, b: any) => (b.mtime || 0) - (a.mtime || 0));
+  let total = 0;
+  let deleted = 0;
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+    total += file.size || 0;
+    if (total <= MEDIA_CACHE_BYTES && index < MEDIA_CACHE_FILES) continue;
+    if (keepSet.has(file.path)) continue;
+    try {
+      await FileSystem.unlink(file.path);
+      deleted++;
+    } catch {
+      // A file that cannot be deleted is not worth failing over.
+    }
+  }
+  return deleted;
+}
+
 export type MediaProgress = { percent: number; message: string };
 
 export type MediaRequest = {
@@ -102,6 +160,7 @@ export async function prepareLocalMedia(request: MediaRequest): Promise<string> 
       report?.({ percent: 95, message: "正在准备视频" });
       await FileSystem.cp(rawPath, partPath);
       await FileSystem.mv(partPath, outPath);
+      await pruneMediaCache(dir, [outPath]);
       report?.({ percent: 100, message: "准备完成" });
       return outPath;
     }
@@ -134,6 +193,9 @@ export async function prepareLocalMedia(request: MediaRequest): Promise<string> 
 
     // Only now is the file complete, so it is published under its real name.
     await FileSystem.mv(partPath, outPath);
+    // The cache cannot grow without a limit: one file per episode watched is
+    // over a gigabyte for a whole series.
+    await pruneMediaCache(dir, [outPath]);
     report?.({ percent: 100, message: "准备完成" });
     return outPath;
   } catch (error) {

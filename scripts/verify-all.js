@@ -24,6 +24,7 @@ const SUITES = [
     ["hot board", "verify-rank.js"],
     ["playback settings", "verify-playback.js"],
     ["local catalogue", "verify-catalogue.js"],
+    ["media cache", "verify-cache.js"],
 ];
 
 let failed = 0;
