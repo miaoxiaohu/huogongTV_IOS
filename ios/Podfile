@@ -31,13 +31,13 @@ target 'HongguoTV' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
-    # Disable warnings-as-errors for fmt pod — its C++20 consteval usage triggers
-    # false-positive -Werror with Xcode 26+ (Clang 22+).
+    # fmt's FMT_STRING uses C++20 consteval which causes hard errors with
+    # Clang 22 (Xcode 26+). Force C++17 for fmt to avoid consteval.
+    # Yoga also uses fmt — same fix applies.
     installer.pods_project.targets.each do |target|
-      if target.name == 'fmt' || target.name == 'Yoga'
+      if ['fmt', 'Yoga'].include?(target.name)
         target.build_configurations.each do |config|
-          config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
-          config.build_settings['WARNING_CFLAGS'] = '-w'
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
       end
     end
