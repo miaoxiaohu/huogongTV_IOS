@@ -15,11 +15,13 @@ import {
   Episode,
   Playback,
   PlaybackProgress,
+  SeasonEntry,
   Series,
 } from "../domain/model";
 import { sign, newDevice } from "./signer";
 import { decodeBase64Url, decryptUrl, deriveKey } from "./mediaCrypto";
 import { prepareLocalMedia } from "./media";
+import { pickSeasons, seriesBaseTitle } from "./seasons";
 import {
     BAD_PLAYBACK_ADDRESS,
     NO_PLAYBACK_RESOURCE,
@@ -269,8 +271,29 @@ export class ApiProvider implements ContentProvider {
     return this.valid((rows || []).map((item: any) => this.card(item)));
   }
 
-  async detail(id: string): Promise<Detail> {
-    const url = `${SITE}/detail?series_id=${id}`;
+  /**
+   * The other seasons of the same show.
+   *
+   * No endpoint exposes the relationship, so it is recovered from the titles:
+   * every season is its own series whose title carries a season marker, so
+   * searching the base title and keeping what normalises onto the same base
+   * finds the siblings. It never throws - a show that has only one season is
+   * the normal case.
+   */
+  async seasons(series: Series): Promise<SeasonEntry[]> {
+    if (!/^[0-9]{1,30}$/.test(series.id)) return [];
+    const base = seriesBaseTitle(series.title);
+    if (!base) return [];
+    let rows: Series[] = [];
+    try {
+      rows = await this.search(base, 1);
+    } catch {
+      return [];
+    }
+    return pickSeasons(base, rows);
+  }
+
+  async detail(id: string): Promise<Detail> {    const url = `${SITE}/detail?series_id=${id}`;
     const html = await this.fetchText(url);
     const data = this.extractRouter(html);
     const o =

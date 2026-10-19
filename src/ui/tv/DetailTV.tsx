@@ -1,13 +1,14 @@
 import React, { useRef, useState } from "react";
 import {
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { TVFocusGuideView } from "./compat";
-import { Detail, Progress, resumeTarget } from "../../domain/model";
+import { Detail, Progress, SeasonEntry, Series, resumeTarget } from "../../domain/model";
 import { Button, palette } from "../components";
 import { EPISODE_GROUP_SIZE } from "./layout";
 
@@ -17,6 +18,9 @@ export function DetailTV({
   favorite,
   onFavorite,
   onPlay,
+  onOpenSeries,
+  seasons,
+  seasonsState = "ready",
   restoreEpisode,
 }: {
   detail: Detail;
@@ -24,6 +28,11 @@ export function DetailTV({
   favorite: boolean;
   onFavorite: () => void;
   onPlay: (index: number, position: number) => void;
+  /** Opens another season of the same show. */
+  onOpenSeries?: (series: Series) => void;
+  /** Every season that was found, the current one included. */
+  seasons?: SeasonEntry[];
+  seasonsState?: "loading" | "ready" | "failed";
   restoreEpisode?: string;
 }) {
   const current = detail.episodes.findIndex(
@@ -36,6 +45,7 @@ export function DetailTV({
   const scroll = useRef<ScrollView>(null);
   const episodeTop = useRef(0);
   const target = resumeTarget(detail, progress);
+  const others = (seasons || []).filter((entry) => entry.series.id !== detail.id);
   return (
     <ScrollView
       ref={scroll}
@@ -123,7 +133,77 @@ export function DetailTV({
             ))}
         </TVFocusGuideView>
       </View>
+      {seasonsState === "loading" ? (
+        <Text style={[s.muted, { marginTop: 18 }]}>正在查找同系列剧…</Text>
+      ) : seasonsState === "failed" ? (
+        <Text style={[s.muted, { marginTop: 18 }]}>暂未找到同系列剧</Text>
+      ) : others.length > 0 ? (
+        <View style={{ marginTop: 18 }}>
+          <Text style={s.section}>
+            同系列剧 · 共 {others.length} 部其它季度
+          </Text>
+          {others.map((entry) => (
+            <SeasonRow
+              key={entry.series.id}
+              entry={entry}
+              onPress={() => onOpenSeries?.(entry.series)}
+            />
+          ))}
+        </View>
+      ) : null}
     </ScrollView>
+  );
+}
+
+/**
+ * One season in the list.
+ *
+ * A vertical list with the poster on the left, not a grid: a grid of season
+ * cards pulls the eye away from the episode grid above it and looks like
+ * another page's content.
+ */
+function SeasonRow({
+  entry,
+  onPress,
+}: {
+  entry: SeasonEntry;
+  onPress: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [broken, setBroken] = useState(false);
+  const meta = entry.series.badge
+    ? `第 ${entry.season} 季 · ${entry.series.badge}`
+    : `第 ${entry.season} 季`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`第 ${entry.season} 季，${entry.series.title}，${entry.series.badge}`}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPress={onPress}
+      style={[s.season, focused && s.seasonFocus]}
+    >
+      {entry.series.cover && !broken ? (
+        <Image
+          source={{ uri: entry.series.cover }}
+          resizeMode="cover"
+          onError={() => setBroken(true)}
+          style={s.seasonCover}
+        />
+      ) : (
+        <View style={[s.seasonCover, s.seasonPlaceholder]}>
+          <Text style={s.muted}>红果</Text>
+        </View>
+      )}
+      <View style={{ flex: 1, gap: 6 }}>
+        <Text numberOfLines={1} style={s.seasonTitle}>
+          {entry.series.title}
+        </Text>
+        <Text numberOfLines={1} style={s.muted}>
+          {meta}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 const s = StyleSheet.create({
@@ -144,4 +224,20 @@ const s = StyleSheet.create({
     color: palette.text,
     marginBottom: 10,
   },
+  season: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 8,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  seasonFocus: { backgroundColor: palette.panel },
+  seasonCover: { width: 74, height: 98, borderRadius: 8 },
+  seasonPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.panel,
+  },
+  seasonTitle: { fontSize: 18, fontWeight: "600", color: palette.text },
 });

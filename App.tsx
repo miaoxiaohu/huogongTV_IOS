@@ -23,6 +23,7 @@ import {
   Detail,
   Library,
   Progress,
+  SeasonEntry,
   Series,
   Settings,
   normalizeBaseUrl,
@@ -66,6 +67,10 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("推荐");
   const [detail, setDetail] = useState<Detail>();
   const [detailId, setDetailId] = useState("");
+  const [seasons, setSeasons] = useState<SeasonEntry[]>([]);
+  const [seasonsState, setSeasonsState] = useState<
+    "loading" | "ready" | "failed"
+  >("ready");
   const [play, setPlay] = useState<{
     detail: Detail;
     index: number;
@@ -153,7 +158,26 @@ export default function App() {
     provider
       .detail(detailId)
       .then((value) => {
-        if (live) setDetail(value);
+        if (!live) return;
+        setDetail(value);
+        // The other seasons of the same show are looked up once the show
+        // itself is known, and they are not worth an error of their own.
+        setSeasonsState("loading");
+        const finder = provider.seasons?.(value);
+        if (!finder) {
+          setSeasonsState("ready");
+          return;
+        }
+        finder
+          .then((rows) => {
+            if (live) {
+              setSeasons(rows);
+              setSeasonsState("ready");
+            }
+          })
+          .catch(() => {
+            if (live) setSeasonsState("failed");
+          });
       })
       .catch((e) => {
         if (live) setError(e.message);
@@ -358,6 +382,13 @@ export default function App() {
                 favorite(series);
               }}
               onPlay={(index, position) => setPlay({ detail, index, position })}
+              onOpenSeries={(series) => {
+                setRestoreEpisode(undefined);
+                setError("");
+                setDetailId(series.id);
+              }}
+              seasons={seasons}
+              seasonsState={seasonsState}
             />
           )
         )

@@ -2,6 +2,7 @@ import {
   ContentProvider,
   Detail,
   Playback,
+  SeasonEntry,
   Series,
   Settings,
 } from "../domain/model";
@@ -71,5 +72,12 @@ export class BridgeProvider implements ContentProvider {
     if (data.path !== `/api/episodes/${id}/stream`)
       throw new Error("播放地址格式异常");
     return { uri: this.settings.baseUrl + data.path, headers: this.headers() };
+  }
+  /**
+   * A self hosted service has no way to know which shows belong together,
+   * so there is nothing to offer here.
+   */
+  async seasons(): Promise<SeasonEntry[]> {
+    return [];
   }
 }

@@ -20,6 +20,7 @@ const SUITES = [
     ["api retry", "verify-api-retry.js"],
     ["playback recovery", "verify-recovery.js"],
     ["domain and storage", "verify-domain.js"],
+    ["seasons", "verify-seasons.js"],
 ];
 
 let failed = 0;

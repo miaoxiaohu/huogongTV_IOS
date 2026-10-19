@@ -6,6 +6,11 @@ export interface Series {
   badge: string;
   tags: string;
 }
+/** One season of a multi-season series, plus the season number. */
+export interface SeasonEntry {
+  series: Series;
+  season: number;
+}
 export interface Episode {
   id: string;
   number: number;
@@ -53,6 +58,11 @@ export interface ContentProvider {
     fresh?: boolean,
     onProgress?: (progress: PlaybackProgress) => void
   ): Promise<Playback>;
+  /**
+   * The other seasons of the same show, when the provider can find them.
+   * Optional: a self hosted service has no way to know them.
+   */
+  seasons?(series: Series): Promise<SeasonEntry[]>;
 }
 export function resumeTarget(
   detail: Detail,

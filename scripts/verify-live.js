@@ -362,6 +362,32 @@ function renditionList(captured) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== the other seasons of the same show ==");
+    {
+        // A real show that has two seasons. The first one carries no marker
+        // in its title, the second one says 第二季.
+        const first = { id: "7682778663716146200", title: "反派拿捏！", cover: "", description: "", badge: "全155集", tags: "" };
+        const second = { id: "7690412195565276184", title: "反派拿捏！第二季", cover: "", description: "", badge: "全390集", tags: "" };
+        const seasons = await provider.seasons(first);
+        const ids = seasons.map((entry) => entry.series.id);
+        ids.includes(first.id)
+            ? ok("the show itself is one of the seasons")
+            : fail("the show itself is missing: " + JSON.stringify(ids));
+        ids.includes(second.id)
+            ? ok("the second season was found (" + second.id + ")")
+            : fail("the second season is missing: " + JSON.stringify(ids));
+        const numbers = seasons.map((entry) => entry.season).sort((a, b) => a - b);
+        JSON.stringify(numbers) === "[1,2]"
+            ? ok("the seasons are numbered 1 and 2")
+            : fail("the seasons are numbered " + JSON.stringify(numbers));
+        // The second season has to be a show of its own, not just a title.
+        const other = await provider.detail(second.id);
+        other.episodes.length > 0
+            ? ok("the second season opens: " + other.title + " with " + other.episodes.length + " episodes")
+            : fail("the second season has no episodes");
+    }
+
+    // -----------------------------------------------------------------------
     if (FULL) {
         console.log("== the whole pipeline, end to end ==");
         // Three episodes: the first one, the one whose renditions are mostly
