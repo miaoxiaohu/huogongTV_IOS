@@ -121,6 +121,13 @@ export default function App() {
     hidden: [],
   });
   const libraryRef = useRef(library);
+  // The settings as they are right now. A restore reads them when it runs,
+  // not when the dialog was opened, so a service address that was changed
+  // in between is not put back to what it was.
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
   const [tab, setTab] = useState<Tab>("推荐");
   const [detail, setDetail] = useState<Detail>();
   const [detailId, setDetailId] = useState("");
@@ -431,7 +438,10 @@ export default function App() {
       setLibrary(merged);
       await saveLibrary(merged);
       if (restoreSettings) {
-        const next = { ...settings, ...settingsFromBackup(backup.settings) };
+        const next = {
+          ...settingsRef.current,
+          ...settingsFromBackup(backup.settings),
+        };
         setSettings(next);
         setCategory(next.category === "comic" ? "comic" : "short");
         setMaxQuality(next.maxQuality ?? 540);
