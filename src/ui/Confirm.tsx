@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button, palette } from "./components";
 import { Pending, confirmWords } from "./confirmations";
@@ -37,6 +37,15 @@ export function Confirm({
     // done" flag of the one before it.
     const busy = !!pending && done === pending;
     const error = failure && pending && failure.pending === pending ? failure.text : "";
+    // The dialog is closed: the flag goes away with it. So the same request
+    // shown again is a new dialog and not a dead one - the guard against a
+    // double tap only has to hold while the dialog is open.
+    useEffect(() => {
+        if (!pending) {
+            setDone(null);
+            setFailure(null);
+        }
+    }, [pending]);
     if (!pending) return null;
     const words = confirmWords(pending);
     return (

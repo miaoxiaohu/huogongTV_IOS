@@ -172,7 +172,7 @@ console.log("== every action that throws records away asks first ==");
         {
             title: "删除观看记录",
             body: "删除《收藏二》的本机观看进度？收藏会保留。",
-            okLabel: "确定",
+            okLabel: "确认",
         },
         "deleting a record says what is going to happen"
     );
@@ -181,7 +181,7 @@ console.log("== every action that throws records away asks first ==");
         {
             title: "清空搜索历史",
             body: "清除本机保存的搜索词？",
-            okLabel: "确定",
+            okLabel: "确认",
         },
         "clearing the search words says so too"
     );
@@ -190,7 +190,7 @@ console.log("== every action that throws records away asks first ==");
         {
             title: "清空观看记录",
             body: "将删除本机所有观看进度，收藏会保留。",
-            okLabel: "确定",
+            okLabel: "确认",
         },
         "and clearing every record says what is kept"
     );
@@ -281,7 +281,7 @@ console.log("== the dialog is usable again the next time it opens ==");
         "and both of them work"
     );
     // The user presses the one that goes ahead.
-    const go = found.find((b) => b.props.accessibilityLabel === "确定");
+    const go = found.find((b) => b.props.accessibilityLabel === "确认");
     go.props.onPress();
     eq(okCalls, 1, "the action ran");
     tree = shim.render(dialog(first));
@@ -300,6 +300,17 @@ console.log("== the dialog is usable again the next time it opens ==");
         found.map((b) => b.props.disabled),
         [false, false],
         "and the next one works - a new dialog never inherits the last one's state"
+    );
+    // And the very same request, shown again. The flag has to go away with
+    // the dialog, not with the request: a parent that keeps its request
+    // around would otherwise get a dead dialog.
+    tree = shim.render(dialog(null));
+    tree = shim.render(dialog(first));
+    found = shim.buttons(tree);
+    eq(
+        found.map((b) => b.props.disabled),
+        [false, false],
+        "and the same request shown again is a new dialog, not a dead one"
     );
 }
 

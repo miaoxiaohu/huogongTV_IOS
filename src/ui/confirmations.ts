@@ -38,6 +38,8 @@ export interface ConfirmWords {
  * The TV app's `tvTools.confirm` says the same things:
  * "删除观看记录" / "删除《X》的本机观看进度？收藏会保留。" and
  * "清空观看记录" / "将删除本机所有观看进度，收藏会保留。"
+ * Its buttons are "取消" and "确认" - and the cancel one is the one that
+ * gets the focus.
  */
 export function confirmWords(pending: Pending): ConfirmWords {
     switch (pending.kind) {
@@ -45,19 +47,19 @@ export function confirmWords(pending: Pending): ConfirmWords {
             return {
                 title: "删除观看记录",
                 body: `删除《${pending.title}》的本机观看进度？收藏会保留。`,
-                okLabel: "确定",
+                okLabel: "确认",
             };
         case "clear-searches":
             return {
                 title: "清空搜索历史",
                 body: "清除本机保存的搜索词？",
-                okLabel: "确定",
+                okLabel: "确认",
             };
         case "clear-history":
             return {
                 title: "清空观看记录",
                 body: "将删除本机所有观看进度，收藏会保留。",
-                okLabel: "确定",
+                okLabel: "确认",
             };
         case "restore":
             return {

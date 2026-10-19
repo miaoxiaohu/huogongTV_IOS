@@ -18,6 +18,8 @@ const { mockModule } = require("../transpile");
 let store = new Map();
 /** The record the hooks are being written into. */
 let current = null;
+/** The effects that are waiting to run after the render. */
+let effects = [];
 
 const Fragment = Symbol.for("react.fragment");
 
@@ -60,8 +62,20 @@ function useRef(initial) {
     return slot;
 }
 
-function useEffect(fn) {
-    if (current) current.effects.push(fn);
+function useEffect(fn, deps) {
+    const hooks = current;
+    const slot = nextSlot(hooks, hooks.effects);
+    // An effect runs when its dependencies change, the way React does it.
+    const changed =
+        !slot.deps ||
+        !deps ||
+        !slot.deps.length ||
+        deps.some((value, index) => !Object.is(value, slot.deps[index]));
+    if (changed) {
+        slot.deps = deps;
+        slot.fn = fn;
+        effects.push(fn);
+    }
 }
 
 function forwardRef(fn) {
@@ -89,9 +103,7 @@ function createElement(type, props, ...children) {
 function render(element) {
     const out = [];
     walk(element, "", out);
-    for (const record of store.values()) {
-        for (const effect of record.effects.splice(0)) effect();
-    }
+    for (const effect of effects.splice(0)) effect();
     return out;
 }
 
@@ -134,6 +146,7 @@ function walk(element, path, out) {
 function reset() {
     store = new Map();
     current = null;
+    effects = [];
 }
 
 /**
