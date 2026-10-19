@@ -91,9 +91,11 @@ export const Card = forwardRef<
     onPress: () => void;
     onFocus: () => void;
     preferred?: boolean;
+    /** The place on a hot board, when the card is on one. */
+    rank?: number | null;
   }
 >(function Card(
-  { item, width, coverHeight, titleHeight, onPress, onFocus, preferred },
+  { item, width, coverHeight, titleHeight, onPress, onFocus, preferred, rank },
   ref
 ) {
   const [focused, setFocused] = useState(false);
@@ -103,7 +105,11 @@ export const Card = forwardRef<
     <Pressable
       ref={ref}
       accessibilityRole="button"
-      accessibilityLabel={`${item.title}，${item.badge}`}
+      accessibilityLabel={
+        rank === undefined
+          ? `${item.title}，${item.badge}`
+          : `第 ${rank ?? "暂无"} 名，${item.title}，${item.badge}`
+      }
       hasTVPreferredFocus={preferred && !preferredUsed.current}
       onFocus={() => {
         preferredUsed.current = true;
@@ -124,6 +130,13 @@ export const Card = forwardRef<
           />
         ) : (
           <Text style={s.placeholder}>红果</Text>
+        )}
+        {rank === undefined ? null : (
+          <View style={[s.rank, (rank ?? 99) <= 3 && s.rankTop]}>
+            <Text style={s.rankText}>
+              {rank ? `第 ${rank} 名` : "名次暂无"}
+            </Text>
+          </View>
         )}
         <View style={s.badge}>
           <Text numberOfLines={1} style={s.badgeText}>
@@ -207,6 +220,17 @@ const s = StyleSheet.create({
     padding: 8,
   },
   badgeText: { color: "#fff", fontSize: 14 },
+  rank: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    backgroundColor: "#1C1F27",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderTopLeftRadius: 8,
+  },
+  rankTop: { backgroundColor: palette.accent },
+  rankText: { color: "#fff", fontSize: 15, fontWeight: "700" },
   title: {
     color: palette.text,
     fontSize: 18,

@@ -21,6 +21,7 @@ const SUITES = [
     ["playback recovery", "verify-recovery.js"],
     ["domain and storage", "verify-domain.js"],
     ["seasons", "verify-seasons.js"],
+    ["hot board", "verify-rank.js"],
 ];
 
 let failed = 0;

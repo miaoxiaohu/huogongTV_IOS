@@ -34,8 +34,8 @@ import { Player } from "./src/ui/Player";
 import { DetailTV } from "./src/ui/tv/DetailTV";
 import { GridHandle, GridPosition, TVGrid } from "./src/ui/tv/TVGrid";
 import { tvInsets } from "./src/ui/tv/layout";
-type Tab = "推荐" | "搜索" | "收藏" | "最近观看" | "设置";
-const tabs: Tab[] = ["推荐", "搜索", "收藏", "最近观看", "设置"];
+type Tab = "推荐" | "搜索" | "排行榜" | "收藏" | "最近观看" | "设置";
+const tabs: Tab[] = ["推荐", "搜索", "排行榜", "收藏", "最近观看", "设置"];
 const sample: Detail = {
   id: "test",
   title: "播放器测试 · Big Buck Bunny",
@@ -112,6 +112,9 @@ export default function App() {
     tab === "搜索" ? submitted : null,
     ready && ["推荐", "搜索"].includes(tab)
   );
+  // The hot board has its own pages: it is a board, not a catalogue, and it
+  // follows the content type instead of the search.
+  const ranking = useCatalog(provider, null, ready && tab === "排行榜", "ranking");
   useEffect(() => {
     loadState()
       .then((data) => {
@@ -329,7 +332,15 @@ export default function App() {
             p.completed ? "已看完" : Math.floor(p.position / 60) + " 分钟"
           }`,
         }))
+      : tab === "排行榜"
+      ? ranking.items.map((item) => ({
+          ...item,
+          // On a board the line under the poster is the heat, not the
+          // episode count.
+          badge: ranking.positions[item.id]?.heat || "热度暂无",
+        }))
       : catalog.items;
+  const shelfLabel = category === "short" ? "真人剧" : "漫剧";
   return (
     <View
       style={[
@@ -521,6 +532,23 @@ export default function App() {
                 onPress={search}
               />
             </View>
+          ) : tab === "排行榜" ? (
+            <>
+              <View style={s.heading}>
+                <Text style={s.section}>{shelfLabel}热播榜</Text>
+                <Button
+                  label="刷新榜单"
+                  onFocus={() => setFocusArea("content")}
+                  onPress={ranking.refresh}
+                />
+              </View>
+              <Text style={[s.muted, { marginBottom: 8 }]}>
+                {ranking.busy
+                  ? "正在读取最新榜单…"
+                  : ranking.updatedText ||
+                    `来源：红果${shelfLabel}热播榜`}
+              </Text>
+            </>
           ) : (
             <View style={s.heading}>
               <Text style={s.section}>{tab === "推荐" ? "今日热播" : tab}</Text>
@@ -549,15 +577,28 @@ export default function App() {
               restore={restoreGrid}
               onFocus={() => setFocusArea("content")}
               onOpen={open}
-              busy={["推荐", "搜索"].includes(tab) && catalog.busy}
-              error={["推荐", "搜索"].includes(tab) ? catalog.error : undefined}
-              more={catalog.more}
+              busy={
+                tab === "排行榜"
+                  ? ranking.busy
+                  : ["推荐", "搜索"].includes(tab) && catalog.busy
+              }
+              error={
+                tab === "排行榜"
+                  ? ranking.error
+                  : ["推荐", "搜索"].includes(tab)
+                  ? catalog.error
+                  : undefined
+              }
+              more={tab === "排行榜" ? ranking.more : catalog.more}
               loadMore={
-                ["推荐", "搜索"].includes(tab) &&
-                (tab !== "搜索" || !!submitted)
+                tab === "排行榜"
+                  ? ranking.loadMore
+                  : ["推荐", "搜索"].includes(tab) &&
+                    (tab !== "搜索" || !!submitted)
                   ? catalog.loadMore
                   : undefined
               }
+              positions={tab === "排行榜" ? ranking.positions : undefined}
               empty={
                 tab === "搜索"
                   ? submitted
@@ -567,6 +608,8 @@ export default function App() {
                   ? "收藏喜欢的短剧，下次接着看"
                   : tab === "最近观看"
                   ? "开始播放后，这里会留下观看记录"
+                  : tab === "排行榜"
+                  ? "热播榜暂时取不到，稍后再试"
                   : "暂无内容"
               }
             />

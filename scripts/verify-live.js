@@ -388,6 +388,40 @@ function renditionList(captured) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== the hot board ==");
+    {
+        const board = await provider.ranking(1);
+        board.items.length > 0
+            ? ok("the board has " + board.items.length + " shows")
+            : fail("the board is empty");
+        if (board.items.length > 0) {
+            const first = board.items[0];
+            const position = board.positions[first.id];
+            position && position.rank === 1
+                ? ok("the first show is 第 1 名: " + first.title)
+                : fail("the first show is not 第 1 名: " + JSON.stringify(position));
+            position && position.heat
+                ? ok("the heat is read: " + position.heat)
+                : fail("the heat is missing");
+            board.items.every((item) => /^[0-9]+$/.test(item.id) && item.title)
+                ? ok("every row has an id and a title")
+                : fail("a row is missing its id or its title");
+            board.updatedText
+                ? ok("the update line is read: " + board.updatedText)
+                : fail("the update line is missing");
+            board.totalPages >= 1
+                ? ok("the board has " + board.totalPages + " pages")
+                : fail("the number of pages is wrong: " + board.totalPages);
+            // The site's own numbering continues across the pages.
+            const second = await provider.ranking(2);
+            const firstRank = second.positions[second.items[0]?.id]?.rank;
+            firstRank && firstRank > 1
+                ? ok("page two starts at 第 " + firstRank + " 名")
+                : fail("page two starts at " + firstRank);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     if (FULL) {
         console.log("== the whole pipeline, end to end ==");
         // Three episodes: the first one, the one whose renditions are mostly

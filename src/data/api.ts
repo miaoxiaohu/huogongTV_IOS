@@ -13,6 +13,7 @@ import {
   ContentProvider,
   Detail,
   Episode,
+  HotRankingPage,
   Playback,
   PlaybackProgress,
   SeasonEntry,
@@ -22,6 +23,7 @@ import { sign, newDevice } from "./signer";
 import { decodeBase64Url, decryptUrl, deriveKey } from "./mediaCrypto";
 import { prepareLocalMedia } from "./media";
 import { pickSeasons, seriesBaseTitle } from "./seasons";
+import { mergeBoards, parseBoard, rankPath, routeKey } from "./rank";
 import {
     BAD_PLAYBACK_ADDRESS,
     NO_PLAYBACK_RESOURCE,
@@ -291,6 +293,46 @@ export class ApiProvider implements ContentProvider {
       return [];
     }
     return pickSeasons(base, rows);
+  }
+
+  /**
+   * The hot board of the shelf this provider reads.
+   *
+   * 真人剧 has one board on the site, 漫剧 has two - the comic one and the
+   * AI one - and there is no board holding both, but their heat values are
+   * comparable, so the two are merged into the one list the user expects.
+   */
+  async ranking(page: number): Promise<HotRankingPage> {
+    const routes =
+      this.category === "real-drama"
+        ? [{ slug: "real-drama", label: "真人剧" }]
+        : [
+            { slug: "comic-drama", label: "漫剧" },
+            { slug: "ai-drama", label: "AI剧" },
+          ];
+    const boards = [];
+    let failure: Error | null = null;
+    for (const route of routes) {
+      try {
+        const html = await this.fetchText(
+          `${SITE}/rank/${rankPath(route.slug)}?page=${page}`
+        );
+        boards.push(parseBoard(html, page, routeKey(rankPath(route.slug)), route.label));
+      } catch (error) {
+        // A board that fails does not take the whole tab down: the other one
+        // still lists, and the shelf's hot list is shorter rather than
+        // missing. Only every board failing is a failure.
+        if (!failure) failure = error as Error;
+      }
+    }
+    if (boards.length === 0) throw failure || new Error("热播榜暂不可用");
+    const merged = mergeBoards(page, boards);
+    return {
+      items: merged.items,
+      positions: merged.positions,
+      totalPages: merged.totalPages,
+      updatedText: merged.updatedText,
+    };
   }
 
   async detail(id: string): Promise<Detail> {    const url = `${SITE}/detail?series_id=${id}`;

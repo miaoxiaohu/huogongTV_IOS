@@ -49,6 +49,13 @@ export interface PlaybackProgress {
   percent: number;
   message: string;
 }
+/** Where a show sits on a hot board, and how hot it is. */
+export interface RankPosition {
+  /** The rank the site gave it, or null when it could not be read. */
+  rank: number | null;
+  /** The heat text as the site printed it, e.g. "8370万热度". */
+  heat: string;
+}
 export interface ContentProvider {
   home(page: number): Promise<Series[]>;
   search(query: string, page: number): Promise<Series[]>;
@@ -63,6 +70,17 @@ export interface ContentProvider {
    * Optional: a self hosted service has no way to know them.
    */
   seasons?(series: Series): Promise<SeasonEntry[]>;
+  /**
+   * The hot board of the provider's shelf.
+   * Optional: a self hosted service has no board.
+   */
+  ranking?(page: number): Promise<HotRankingPage>;
+}
+export interface HotRankingPage {
+  items: Series[];
+  positions: Record<string, RankPosition>;
+  totalPages: number;
+  updatedText: string;
 }
 export function resumeTarget(
   detail: Detail,

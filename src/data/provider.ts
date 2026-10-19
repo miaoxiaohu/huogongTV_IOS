@@ -1,6 +1,7 @@
 import {
   ContentProvider,
   Detail,
+  HotRankingPage,
   Playback,
   SeasonEntry,
   Series,
@@ -79,5 +80,9 @@ export class BridgeProvider implements ContentProvider {
    */
   async seasons(): Promise<SeasonEntry[]> {
     return [];
+  }
+  /** A self hosted service has no hot board. */
+  async ranking(): Promise<HotRankingPage> {
+    return { items: [], positions: {}, totalPages: 1, updatedText: "" };
   }
 }

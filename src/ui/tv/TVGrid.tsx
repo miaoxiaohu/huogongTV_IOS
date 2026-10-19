@@ -27,6 +27,8 @@ export const TVGrid = forwardRef<
     error?: string;
     more?: boolean;
     loadMore?: () => void;
+    /** Where each show sits on a hot board, when the grid is one. */
+    positions?: Record<string, { rank: number | null; heat: string }>;
   }
 >(function TVGrid(
   {
@@ -41,6 +43,7 @@ export const TVGrid = forwardRef<
     error,
     more,
     loadMore,
+    positions,
   },
   ref
 ) {
@@ -134,6 +137,9 @@ export const TVGrid = forwardRef<
               width={cardWidth}
               coverHeight={coverHeight}
               titleHeight={titleHeight}
+              rank={
+                positions ? (positions[item.id]?.rank ?? null) : undefined
+              }
               preferred={restore && index === initial}
               onPress={() => onOpen(item)}
               onFocus={() => {
