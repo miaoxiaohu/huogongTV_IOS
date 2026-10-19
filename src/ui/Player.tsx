@@ -378,6 +378,7 @@ export function Player({
             message={error}
             note={recoveryNote}
             retry={manualRetry}
+            retryLabel="立即重试"
             actions={
               <View style={s.failureActions}>
                 {onTryLowerQuality && maxQuality > 720 ? (

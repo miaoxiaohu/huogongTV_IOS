@@ -7,7 +7,14 @@ export async function loadState(): Promise<{
   library: Library;
 }> {
   const rows = await AsyncStorage.multiGet(["settings.v1", "library.v1"]);
-  let settings: Settings = { baseUrl: "", token: "", category: "short" };
+  // The defaults have to be complete: a settings object without a quality
+  // falls back to 540 somewhere else, and the two would drift apart.
+  let settings: Settings = {
+    baseUrl: "",
+    token: "",
+    category: "short",
+    maxQuality: 540,
+  };
   let library = empty;
   try {
     const data = JSON.parse(rows[0][1] || "{}");
@@ -30,7 +37,8 @@ export async function loadState(): Promise<{
     if (
       Array.isArray(data.favorites) &&
       data.progress &&
-      typeof data.progress === "object"
+      typeof data.progress === "object" &&
+      !Array.isArray(data.progress)
     )
       library = data;
   } catch {}

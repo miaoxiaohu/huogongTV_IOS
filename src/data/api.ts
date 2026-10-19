@@ -119,8 +119,8 @@ export class ApiProvider implements ContentProvider {
    * The signed request signs itself with a fresh device identity every time,
    * and a shared identity is exactly what the server blocks silently, so each
    * attempt is a genuinely new request. A body that is empty or that is not
-   * JSON at all is a broken answer and is worth another try; an HTTP error
-   * status is a real answer from the server and is not retried.
+   * JSON at all is a broken answer and is worth another try, and so is a 5xx.
+   * A 4xx is the server's real answer and is not retried.
    */
   private async fetchJson(
     makeRequest: () => Promise<string>,

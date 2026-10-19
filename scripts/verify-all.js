@@ -19,6 +19,7 @@ const SUITES = [
     ["cenc units", "verify-cenc-unit.js"],
     ["api retry", "verify-api-retry.js"],
     ["playback recovery", "verify-recovery.js"],
+    ["domain and storage", "verify-domain.js"],
 ];
 
 let failed = 0;

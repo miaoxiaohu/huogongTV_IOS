@@ -141,12 +141,15 @@ export function Notice({
   message,
   busy = false,
   retry,
+  retryLabel = "重试",
   note,
   actions,
 }: {
   message: string;
   busy?: boolean;
   retry?: () => void;
+  /** The label of the retry button. */
+  retryLabel?: string;
   /** A smaller line under the message, e.g. what is about to happen next. */
   note?: string;
   /** Extra buttons, e.g. "try a lower quality" next to "retry". */
@@ -157,7 +160,9 @@ export function Notice({
       {busy && <ActivityIndicator color={palette.accent} size="large" />}
       <Text style={s.noticeText}>{message}</Text>
       {note ? <Text style={s.noticeNote}>{note}</Text> : null}
-      {retry && <Button label="重试" onPress={retry} primary preferred />}
+      {retry && (
+        <Button label={retryLabel} onPress={retry} primary preferred />
+      )}
       {actions}
     </View>
   );

@@ -60,6 +60,7 @@ npm run check        # 解析 + 类型检查 + 全部离线套件
 | `verify-cenc-unit.js` | `stco`/`co64`、`saio` v0/v1、子样本加密、双轨 | `node:crypto` 合成的 MP4 |
 | `verify-api-retry.js` | 签名接口返回空 body 时的重试行为 | mock 掉 `fetch`，逐个响应喂进去 |
 | `verify-recovery.js` | 播放失败自动重试的时序与预算 | 假时钟 |
+| `verify-domain.js` | 续播定位、列表合并、服务地址校验、本地记录容错 | `ResumePlayback.target` 的 Kotlin 转写 |
 
 实网套件（需要服务器在线，跑 CI 会不稳，手动执行）：
 

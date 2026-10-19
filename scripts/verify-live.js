@@ -31,7 +31,6 @@ const TMP = path.join(WORK, "fs");
 fs.mkdirSync(TMP, { recursive: true });
 
 const SITE = "https://hongguoduanju.com";
-const VIDEO_API = "https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/";
 
 const args = process.argv.slice(2);
 const FULL = args.includes("--full");
