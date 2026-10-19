@@ -60,6 +60,7 @@ const library = {
     searches: [{ query: "都市", type: "comic" }],
     later: [show("9", "稍后看")],
     watched: ["2"],
+    hidden: ["3"],
 };
 
 const settings = {
@@ -83,6 +84,7 @@ console.log("== the backup travels ==");
     eq(data.history.length, 1, "the records are in it");
     eq(data.watched, ["2"], "the watched shows are in it");
     eq(data.later.length, 1, "the watch later list is in it");
+    eq(data.hidden, ["3"], "the hidden shows are in it");
     eq(data.searches, [{ query: "都市", type: "comic" }], "the searches are in it");
     eq(data.settings.quality, 720, "the quality travels");
     eq(data.settings.speed, 1.5, "the speed travels");
@@ -106,6 +108,7 @@ console.log("== what comes back is what went out ==");
     eq(back.history[0].position, 120, "the position");
     eq(back.watched, ["2"], "the watched shows");
     eq(back.later.map((s) => s.id), ["9"], "the watch later list");
+    eq(back.hidden, ["3"], "the hidden shows");
     eq(back.searches, [{ query: "都市", type: "comic" }], "the searches");
     eq(back.settings.quality, 720, "the quality");
     eq(settingsFromBackup(back.settings).frameMode, "zoom", "the frame mode comes back in the app's shape");
@@ -165,6 +168,7 @@ console.log("== putting a backup back ==");
             frame: "fit",
         },
         later: [show("9", "稍后看"), show("8", "另一部")],
+        hidden: ["4"],
     };
     const merged = mergeBackup(library, incoming, true);
     eq(
@@ -189,6 +193,7 @@ console.log("== putting a backup back ==");
         ["9", "8"],
         "the watch later list is merged"
     );
+    eq(merged.hidden, ["3", "4"], "the hidden shows are merged");
     eq(settingsFromBackup(incoming.settings).maxQuality, 1080, "the settings can come back too");
     eq(
         settingsFromBackup(incoming.settings).maxQuality,

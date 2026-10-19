@@ -47,6 +47,7 @@ export type BackupData = {
   searches: { query: string; type: "short" | "comic" }[];
   settings: BackupSettings;
   later: Series[];
+  hidden: string[];
 };
 
 const ID = /^[0-9]{1,30}$/;
@@ -126,6 +127,7 @@ export function encodeBackup(
             updatedAt: p.updatedAt,
         })),
         watched: library.watched.filter((id) => retained.has(id)).slice(0, 500),
+        hidden: library.hidden.slice(0, 500),
         searches: library.searches
             .slice(0, 20)
             .map((s) => ({ query: cleanText(s.query, 80), type: s.type })),
@@ -227,6 +229,9 @@ export function decodeBackup(text: string): BackupData {
         throw new Error("备份包含重复剧集");
     }
     const watched = rows("watched", 500).map((value) => idField(value));
+    const hidden = data.hidden
+        ? rows("hidden", 500).map((value) => idField(value))
+        : [];
     const searches = readSearches(rows("searches", 20));
     const raw = data.settings;
     if (!raw || typeof raw !== "object") throw new Error("设置无效");
@@ -248,6 +253,7 @@ export function decodeBackup(text: string): BackupData {
         watched,
         searches,
         later,
+        hidden,
         settings: {
             quality,
             speed: raw.speed,
@@ -340,6 +346,9 @@ export function mergeBackup(
         watched: Array.from(watched)
             .filter((id) => retained.has(id))
             .slice(0, 500),
+        hidden: Array.from(new Set(local.hidden.concat(incoming.hidden))).slice(
+            -500
+        ),
     };
 }
 

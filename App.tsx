@@ -100,6 +100,7 @@ export default function App() {
     searches: [],
     later: [],
     watched: [],
+    hidden: [],
   });
   const libraryRef = useRef(library);
   const [tab, setTab] = useState<Tab>("推荐");
@@ -818,7 +819,7 @@ export default function App() {
           // episode count.
           badge: ranking.positions[item.id]?.heat || "热度暂无",
         }))
-      : catalog.items;
+      : catalog.items.filter((item) => !library.hidden.includes(item.id));
   const shelfLabel = category === "short" ? "真人剧" : "漫剧";
   // The watch later list, the way the TV app keeps it.
   const later = library.later;
@@ -1039,8 +1040,27 @@ export default function App() {
               }
             />
           </View>
-          <Text style={s.label}>备份与恢复</Text>
+          <Text style={s.label}>片库</Text>
           <View style={s.row}>
+            <Button
+              label={`恢复隐藏推荐 · ${library.hidden.length} 部`}
+              disabled={library.hidden.length === 0}
+              onPress={() => {
+                updateLibrary((old) => ({ ...old, hidden: [] }));
+                setMessage("热门推荐已恢复");
+              }}
+            />
+          </View>
+          <Text style={s.label}>关于</Text>
+          <Text style={s.note}>
+            本 iOS 版以 GPL-3.0 发布。{"\n"}
+            内容协议与加密处理移植自 drpys（22261ad）。{"\n"}
+            React Native：MIT{"\n"}
+            react-native-video：MIT{"\n"}
+            react-native-file-access：MIT{"\n"}
+            完整源码和许可证见 GitHub：github.com/miaoxiaohu/huogongTV_IOS
+          </Text>
+          <Text style={s.label}>备份与恢复</Text>          <View style={s.row}>
             <Button
               label={busy ? "正在处理…" : "备份本机记录"}
               disabled={busy}
@@ -1397,6 +1417,20 @@ export default function App() {
                   open(target);
                 }}
               />
+              {tab === "推荐" ? (
+                <Button
+                  label="不在热门推荐中显示"
+                  onPress={() => {
+                    const id = quick.id;
+                    updateLibrary((old) => ({
+                      ...old,
+                      hidden: Array.from(new Set([...old.hidden, id])).slice(-500),
+                    }));
+                    setQuick(null);
+                    setMessage("已从热门推荐中隐藏，可在设置里恢复");
+                  }}
+                />
+              ) : null}
               <Button label="取消" onPress={() => setQuick(null)} />
             </View>
           </View>

@@ -44,6 +44,8 @@ export interface Library {
   later: Series[];
   /** The shows the user marked as watched through. */
   watched: string[];
+  /** The shows the user hid from the hot recommendations. */
+  hidden: string[];
 }
 export interface Settings {
   baseUrl: string;

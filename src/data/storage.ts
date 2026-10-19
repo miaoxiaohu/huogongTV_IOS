@@ -12,6 +12,7 @@ const empty: Library = {
   searches: [],
   later: [],
   watched: [],
+  hidden: [],
 };
 const CATALOGUE_KEY = "catalogue.v1";
 /** How many shows the watch later list holds. */
@@ -81,6 +82,7 @@ export async function loadState(): Promise<{
       searches: readSearches(data.searches),
       later: readSeries(data.later).slice(0, LATER_LIMIT),
       watched: readWatched(data.watched),
+      hidden: readWatched(data.hidden).slice(0, 500),
     };
   } catch {}
   return { settings, library };
