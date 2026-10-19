@@ -242,6 +242,31 @@ function deviceIdOf(call) {
     }
 
     // -----------------------------------------------------------------------
+    console.log("== the permanent verdict survives the fallback ==");
+    {
+        // The signed player has no stream and the public one has none either:
+        // that is a fact about the episode, and the recovery must not spend
+        // its budget on it.
+        const server = {
+            videoModel: [{ body: "" }, { body: "" }, { body: "" }],
+            fallback: [],
+            publicProbe: [{ status: 404 }],
+            calls: [],
+        };
+        installMock(server);
+        const provider = new ApiProvider({ category: "short", maxQuality: 540 });
+        let message = "";
+        try {
+            await provider.resolve(EPISODE);
+        } catch (e) {
+            message = String(e && e.message);
+        }
+        message === "该剧集暂无公开播放资源"
+            ? ok("the message is 该剧集暂无公开播放资源")
+            : fail("the message was " + JSON.stringify(message));
+    }
+
+    // -----------------------------------------------------------------------
     console.log("== the public fallback survives one broken probe ==");
     {
         const server = {

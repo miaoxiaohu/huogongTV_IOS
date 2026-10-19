@@ -42,6 +42,14 @@ type SignedRequest = {
 const SITE = "https://hongguoduanju.com";
 const VIDEO_API = "https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/";
 const FETCH_TIMEOUT = 65000;
+/**
+ * How long one JSON request may take, retries included.
+ *
+ * The request timeout is 65 seconds, so three attempts of it would be over
+ * three minutes on a black holed network - long enough for the user to give
+ * up and for the automatic recovery to pile on top of it.
+ */
+const JSON_BUDGET = 90000;
 
 /**
  * The CDN rejects requests that do not look like the app's own player.
@@ -81,9 +89,13 @@ export class ApiProvider implements ContentProvider {
   // HTTP helpers
   // -------------------------------------------------------------------------
 
-  private async fetchText(url: string, signed?: SignedRequest): Promise<string> {
+  private async fetchText(
+    url: string,
+    signed?: SignedRequest,
+    timeoutMs = FETCH_TIMEOUT
+  ): Promise<string> {
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT);
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = signed?.headers ?? {
         "User-Agent":
@@ -105,11 +117,12 @@ export class ApiProvider implements ContentProvider {
 
   private async signedFetch(
     url: string,
-    body: Uint8Array | null
+    body: Uint8Array | null,
+    timeoutMs = FETCH_TIMEOUT
   ): Promise<string> {
     const device = newDevice();
     const signed = sign(VIDEO_API, device, body);
-    return this.fetchText(signed.url, signed);
+    return this.fetchText(signed.url, signed, timeoutMs);
   }
 
   /**
@@ -127,16 +140,22 @@ export class ApiProvider implements ContentProvider {
    * A 4xx is the server's real answer and is not retried.
    */
   private async fetchJson(
-    makeRequest: () => Promise<string>,
-    attempts = 3
+    makeRequest: (timeoutMs: number) => Promise<string>,
+    attempts = 3,
+    budgetMs = JSON_BUDGET
   ): Promise<any> {
+    const deadline = Date.now() + budgetMs;
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) {
         await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
       }
+      // The retries share one budget. Without it a black holed network would
+      // hold the player for three times the request timeout.
+      const left = deadline - Date.now();
+      if (left <= 0) break;
       try {
-        const text = await makeRequest();
+        const text = await makeRequest(Math.min(left, FETCH_TIMEOUT));
         if (!text || text.trim().length === 0) {
           lastError = new Error("播放接口返回空内容");
           continue;
@@ -154,7 +173,7 @@ export class ApiProvider implements ContentProvider {
         lastError = failure;
       }
     }
-    throw lastError ?? new Error("播放接口暂不可用");
+    throw lastError ?? new Error(PLAYER_UNAVAILABLE);
   }
 
   // -------------------------------------------------------------------------
@@ -381,7 +400,12 @@ export class ApiProvider implements ContentProvider {
       try {
         return await this.publicResolve(id);
       } catch (publicError) {
-        throw signed;
+        // 「该剧集暂无公开播放资源」 is a fact about the episode: neither the
+        // signed player nor the public one has it. The recovery must not
+        // spend its budget on that, so this verdict wins over the signed
+        // error.
+        const message = publicError instanceof Error ? publicError.message : "";
+        throw message === NO_PUBLIC_SOURCE ? publicError : signed;
       }
     }
   }
@@ -409,7 +433,9 @@ export class ApiProvider implements ContentProvider {
     const body = new TextEncoder().encode(payload);
     let data: any;
     try {
-      data = await this.fetchJson(() => this.signedFetch(VIDEO_API, body));
+      data = await this.fetchJson((timeout) =>
+        this.signedFetch(VIDEO_API, body, timeout)
+      );
     } catch {
       // The retry already tried three times with three different identities.
       // The reason is not worth showing raw, the user only needs to know
@@ -451,7 +477,9 @@ export class ApiProvider implements ContentProvider {
     // Fetch the actual stream info from the fallback URL
     let streamData: any;
     try {
-      streamData = await this.fetchJson(() => this.fetchText(fallbackUrl));
+      streamData = await this.fetchJson((timeout) =>
+        this.fetchText(fallbackUrl, undefined, timeout)
+      );
     } catch {
       throw new Error(NO_PLAYBACK_RESOURCE);
     }

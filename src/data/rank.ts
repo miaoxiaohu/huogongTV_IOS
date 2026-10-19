@@ -35,6 +35,9 @@ export type HotRanking = {
   updatedText: string;
 };
 
+/** How many rows a board page carries. */
+const PAGE_SIZE = 20;
+
 /** The router key the site files a route's board under. */
 export function routeKey(rankPath: string): string {
   return `rank_${rankPath}/page`;
@@ -245,6 +248,8 @@ export function parseBoard(
     const items: Series[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
+      // A half broken response can carry a row that is not an object at all.
+      if (!row || typeof row !== "object") continue;
       const series = rowToSeries(row, positions);
       if (!series) continue;
       if (!/^[0-9]{1,30}$/.test(series.id) || !series.title.trim()) continue;
@@ -304,7 +309,11 @@ export function mergeBoards(page: number, boards: RankBoard[]): HotRanking {
   const base =
     siteFirst !== undefined
       ? (siteFirst - 1) * boards.length
-      : (page - 1) * ordered.length;
+      : // No row carried a rank, so the shelf's own numbering has to be
+        // invented. The page size is used rather than the number of rows on
+        // this page: a short last page would otherwise number itself over
+        // the ranks of the page before it.
+        (page - 1) * PAGE_SIZE * boards.length;
 
   const positions: Record<string, RankPosition> = {};
   const items: Series[] = [];

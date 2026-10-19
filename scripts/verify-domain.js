@@ -235,6 +235,41 @@ console.log("== reading the local records back ==");
             eq(state.library, { favorites: [], progress: {} }, "a library with a broken progress map is ignored");
         }
         {
+            // A record that is not a record would crash the list later, so
+            // it is dropped here instead of carried along.
+            store.set(
+                "library.v1",
+                JSON.stringify({
+                    favorites: [],
+                    progress: {
+                        good: {
+                            series: { id: "1", title: "剧" },
+                            episodeId: "e",
+                            episodeNumber: 2,
+                            position: 30,
+                            duration: 0,
+                            completed: false,
+                            updatedAt: 1,
+                        },
+                        empty: {},
+                        noSeries: { episodeId: "e", episodeNumber: 1, position: 0 },
+                        noNumber: {
+                            series: { id: "2", title: "剧" },
+                            episodeId: "e",
+                            position: 0,
+                        },
+                        notAnObject: "nonsense",
+                    },
+                })
+            );
+            const state = await storage.loadState();
+            eq(
+                Object.keys(state.library.progress),
+                ["good"],
+                "only the records that can be read are kept"
+            );
+        }
+        {
             // The writes are serialised, so a slow write cannot overwrite a
             // newer one.
             store.clear();

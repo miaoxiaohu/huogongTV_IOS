@@ -245,7 +245,12 @@ export default function App() {
     setConnecting(true);
     setMessage("");
     try {
-      const next = { baseUrl: normalizeBaseUrl(url), token: token.trim(), category };
+      const next = {
+        baseUrl: normalizeBaseUrl(url),
+        token: token.trim(),
+        category,
+        maxQuality,
+      };
       await new BridgeProvider(next).health();
       await saveSettings(next);
       setSettings(next);
@@ -314,7 +319,11 @@ export default function App() {
           onExit={exitPlayer}
           onProgress={record}
           maxQuality={maxQuality}
-          onTryLowerQuality={() => void changeQuality(720)}
+          onTryLowerQuality={() => {
+            void changeQuality(720).catch(() =>
+              setMessage("清晰度设置保存失败，请重试")
+            );
+          }}
           test={play.test}
         />
       </View>

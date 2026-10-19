@@ -84,6 +84,6 @@ export function useCatalog(
   }
   useEffect(() => {
     if (enabled && !cache.has(key) && query !== "") void load();
-  }, [cache, key, enabled]);
+  }, [cache, key, enabled, query, mode]);
   return { ...entry, loadMore: () => load(), refresh: () => load(true) };
 }

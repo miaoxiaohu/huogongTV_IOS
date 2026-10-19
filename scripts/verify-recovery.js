@@ -216,11 +216,10 @@ console.log("== coming back to the app tries again ==");
     const { clock, state, controller } = makeController();
     controller.fail("播放接口暂不可用", 0);
     controller.poke(0);
-    eq(clock.pending(), 1, "the timer is still the only one");
-    clock.advance(1000);
-    eq(state.retries, 1, "the retry happens");
+    eq(clock.pending(), 0, "the pending timer is dropped, the attempt happens now");
+    eq(state.retries, 1, "the retry happens at once");
     eq(state.armed, false, "the recovery is disarmed while the attempt runs");
-    // A poke while an attempt is under way must not double it.
+    // A poke without a pending attempt must not start anything.
     controller.poke(0);
     clock.advance(5000);
     eq(state.retries, 1, "a poke during an attempt does nothing");

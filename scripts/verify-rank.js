@@ -166,6 +166,19 @@ console.log("== reading a board out of a page ==");
     }
     threw.includes("分页信息异常") ? ok("the wrong page is rejected") : fail("the wrong page was accepted: " + threw);
 
+    // A row that is not an object at all.
+    const withHole = html.replace(
+        '"rankList":[{',
+        '"rankList":[null,{'
+    );
+    threw = "";
+    try {
+        const board = parseBoard(withHole, 1, routeKey("hot-real-drama"), "真人剧");
+        eq(board.items.length, 2, "the broken row is skipped, the rest is read");
+    } catch (e) {
+        fail("a broken row threw " + e.message);
+    }
+
     // A board that says it failed.
     const failed = html.replace("&quot;isSuccess&quot;:true", "&quot;isSuccess&quot;:false");
     threw = "";
@@ -283,6 +296,25 @@ console.log("== putting two boards into one list ==");
         mixed.items.map((item) => item.id),
         ["a1", "a2", "x"],
         "a row without a heat goes last"
+    );
+
+    // A board where no row carries a rank at all: the numbering has to be
+    // invented, and a short page must not number itself over the page
+    // before it.
+    const withoutRanks = {
+        items: [show("x", "第一部"), show("y", "第二部")],
+        positions: {
+            x: { rank: null, heat: "5000万热度" },
+            y: { rank: null, heat: "4000万热度" },
+        },
+        totalPages: 3,
+        updatedText: "",
+    };
+    const invented = mergeBoards(3, [withoutRanks]);
+    eq(
+        invented.items.map((item) => invented.positions[item.id].rank),
+        [41, 42],
+        "a page without ranks is numbered from the page size, not from its own length"
     );
 }
 

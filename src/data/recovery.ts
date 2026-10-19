@@ -119,11 +119,18 @@ export class RecoveryController {
   }
 
   /**
-   * The app came back to the foreground. That is the moment a connection
-   * that was down usually works again, so the retry does not have to wait.
+   * The app came back to the foreground.
+   *
+   * That is the moment a connection that was down usually works again, so
+   * the wait is over: the attempt happens now instead of when the timer was
+   * going to fire.
    */
   poke(position: number): void {
-    if (this.enabled) this.schedule(position);
+    if (!this.enabled) return;
+    this.stop();
+    if (!this.budget.consume()) return;
+    this.arm(false);
+    this.hooks.onRetry();
   }
 
   /**

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Library, Settings } from "../domain/model";
+import { Library, Progress, Settings } from "../domain/model";
 const empty: Library = { favorites: [], progress: {} };
 let pending = Promise.resolve();
 export async function loadState(): Promise<{
@@ -39,8 +39,20 @@ export async function loadState(): Promise<{
       data.progress &&
       typeof data.progress === "object" &&
       !Array.isArray(data.progress)
-    )
-      library = data;
+    ) {
+      // A record that is not a record would crash the list later, so the
+      // ones that cannot be read are dropped instead of carried along.
+      const progress: Record<string, Progress> = {};
+      for (const [id, value] of Object.entries(data.progress)) {
+        const entry = value as Progress;
+        if (!entry || typeof entry !== "object") continue;
+        if (!entry.series || typeof entry.series.id !== "string") continue;
+        if (typeof entry.episodeNumber !== "number") continue;
+        if (typeof entry.position !== "number") continue;
+        progress[id] = entry;
+      }
+      library = { favorites: data.favorites, progress };
+    }
   } catch {}
   return { settings, library };
 }
