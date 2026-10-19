@@ -31,5 +31,15 @@ target 'HongguoTV' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    # Disable warnings-as-errors for fmt pod — its C++20 consteval usage triggers
+    # false-positive -Werror with Xcode 26+ (Clang 22+).
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt' || target.name == 'Yoga'
+        target.build_configurations.each do |config|
+          config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+          config.build_settings['WARNING_CFLAGS'] = '-w'
+        end
+      end
+    end
   end
 end
