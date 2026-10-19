@@ -37,8 +37,12 @@ import {
   shouldCheck,
 } from "./src/data/favorites";
 import { rememberSearch, RecentSearch } from "./src/data/searchHistory";
+import { clearHistory, clearSearches, removeHistory } from "./src/data/history";
+import { licenseNotice } from "./src/data/licenses";
 import {
+  BackupData,
   decodeBackup,
+  describeBackup,
   encodeBackup,
   mergeBackup,
   settingsFromBackup,
@@ -69,7 +73,9 @@ import {
   normalizeBaseUrl,
   resumeTarget,
 } from "./src/domain/model";
-import { Button, Notice, palette } from "./src/ui/components";
+import { Button, Check, Notice, palette } from "./src/ui/components";
+import { Confirm, ConfirmRequest } from "./src/ui/Confirm";
+import { Info } from "./src/ui/Info";
 import { focusTV } from "./src/ui/tv/compat";
 import { Player } from "./src/ui/Player";
 import { DetailTV } from "./src/ui/tv/DetailTV";
@@ -78,6 +84,19 @@ import { Shelf } from "./src/ui/tv/Shelf";
 import { tvInsets } from "./src/ui/tv/layout";
 type Tab = "推荐" | "搜索" | "排行榜" | "收藏" | "最近观看" | "设置";
 const tabs: Tab[] = ["推荐", "搜索", "排行榜", "收藏", "最近观看", "设置"];
+
+/**
+ * Something the user has to agree to before it happens.
+ *
+ * It is kept as data and not as a ready-made dialog, so the dialog always
+ * reads the current state - a checkbox that was ticked is seen by the action
+ * that runs when the button is pressed.
+ */
+type Pending =
+  | { kind: "remove-record"; id: string; title: string }
+  | { kind: "clear-searches" }
+  | { kind: "clear-history" }
+  | { kind: "restore"; backup: BackupData; name: string; withSettings: boolean };
 const sample: Detail = {
   id: "test",
   title: "播放器测试 · Big Buck Bunny",
@@ -145,6 +164,10 @@ export default function App() {
   const [appVersion, setAppVersion] = useState("");
   // The search history.
   const [historyOpen, setHistoryOpen] = useState(false);
+  // The confirmation dialog. Nothing is thrown away without asking first.
+  const [pending, setPending] = useState<Pending | null>(null);
+  // A page of text, e.g. the open source licenses.
+  const [info, setInfo] = useState<{ title: string; body: string } | null>(null);
   const [play, setPlay] = useState<{
     detail: Detail;
     index: number;
@@ -364,15 +387,7 @@ export default function App() {
 
   /** Deletes the watching record of a show. The favourite stays. */
   function removeProgress(id: string) {
-    updateLibrary((old) => {
-      const progress = { ...old.progress };
-      delete progress[id];
-      return {
-        ...old,
-        progress,
-        watched: old.watched.filter((row) => row !== id),
-      };
-    });
+    updateLibrary((old) => removeHistory(old, id));
   }
 
   /**
@@ -398,21 +413,44 @@ export default function App() {
     }
   }
 
-  /** Puts a backup back together with what is on the device. */
-  async function importBackup(name: string) {
+  /**
+   * Reads a backup and asks before the records are put back.
+   *
+   * The preview says what is in the backup, so the user can see what is
+   * about to change. The playback settings and the shelf are not restored
+   * unless the user ticks that - the same rule as the TV app.
+   */
+  async function askRestore(name: string) {
     setBusy(true);
     try {
       const text = await readBackup(`${Dirs.DocumentDir}/${name}`);
       const backup = decodeBackup(text);
-      const merged = mergeBackup(library, backup, true);
-      setLibrary(merged);
+      setBackupOpen(false);
+      setPending({ kind: "restore", backup, name, withSettings: false });
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "这个备份读不出来，请换一个"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Puts a backup back together with what is on the device. */
+  async function applyBackup(backup: BackupData, restoreSettings: boolean) {
+    setBusy(true);
+    try {
+      const merged = mergeBackup(libraryRef.current, backup);
       libraryRef.current = merged;
+      setLibrary(merged);
       await saveLibrary(merged);
-      const next = { ...settings, ...settingsFromBackup(backup.settings) };
-      setSettings(next);
-      setCategory(next.category === "comic" ? "comic" : "short");
-      setMaxQuality(next.maxQuality ?? 540);
-      await saveSettings(next);
+      if (restoreSettings) {
+        const next = { ...settings, ...settingsFromBackup(backup.settings) };
+        setSettings(next);
+        setCategory(next.category === "comic" ? "comic" : "short");
+        setMaxQuality(next.maxQuality ?? 540);
+        await saveSettings(next);
+      }
       setMessage("记录已合并恢复");
       setBackups([]);
     } catch (error) {
@@ -893,6 +931,61 @@ export default function App() {
     .slice(0, 8);
   // The walk is done when every catalogue reached its final page.
   const catalogueComplete = catalogue.done.length >= CATALOGUE_ROUTES.length;
+  /**
+   * The dialog for whatever the user has to agree to.
+   *
+   * It is built here and not stored, so the action always sees the state as
+   * it is when the button is pressed - the checkbox in the restore preview
+   * included.
+   */
+  const confirmRequest: ConfirmRequest | null = !pending
+    ? null
+    : pending.kind === "remove-record"
+    ? {
+        title: "删除观看记录",
+        body: `删除《${pending.title}》的本机观看进度？收藏会保留。`,
+        onOk: () => {
+          removeProgress(pending.id);
+          setPending(null);
+        },
+      }
+    : pending.kind === "clear-searches"
+    ? {
+        title: "清空搜索历史",
+        body: "清除本机保存的搜索词？",
+        onOk: () => {
+          updateLibrary(clearSearches);
+          setPending(null);
+        },
+      }
+    : pending.kind === "clear-history"
+    ? {
+        title: "清空观看记录",
+        body: "将删除本机所有观看进度，收藏会保留。",
+        onOk: () => {
+          updateLibrary(clearHistory);
+          setPending(null);
+        },
+      }
+    : {
+        title: "确认恢复本机记录",
+        body: describeBackup(pending.backup),
+        okLabel: "合并恢复",
+        extra: (
+          <Check
+            label="同时恢复播放设置和内容分类"
+            checked={pending.withSettings}
+            onToggle={() =>
+              setPending({ ...pending, withSettings: !pending.withSettings })
+            }
+          />
+        ),
+        onOk: () => {
+          const { backup, withSettings } = pending;
+          setPending(null);
+          void applyBackup(backup, withSettings);
+        },
+      };
   return (
     <View
       style={[
@@ -1108,20 +1201,19 @@ export default function App() {
                 }}
               />
             ) : null}
+            <Button
+              label="开源许可"
+              onFocus={() => setFocusArea("content")}
+              onPress={() =>
+                setInfo({ title: "开源许可", body: licenseNotice() })
+              }
+            />
           </View>
           {updateState ? (
             <Text accessibilityLiveRegion="polite" style={s.feedback}>
               {updateState}
             </Text>
           ) : null}
-          <Text style={s.note}>
-            本 iOS 版以 GPL-3.0 发布。{"\n"}
-            内容协议与加密处理移植自 drpys（22261ad）。{"\n"}
-            React Native：MIT{"\n"}
-            react-native-video：MIT{"\n"}
-            react-native-file-access：MIT{"\n"}
-            完整源码和许可证见 GitHub：github.com/miaoxiaohu/huogongTV_IOS
-          </Text>
           <Text style={s.label}>备份与恢复</Text>          <View style={s.row}>
             <Button
               label={busy ? "正在处理…" : "备份本机记录"}
@@ -1133,7 +1225,7 @@ export default function App() {
               disabled={busy || backups.length === 0}
               onPress={() => {
                 if (backups.length === 1) {
-                  void importBackup(backups[0]);
+                  void askRestore(backups[0]);
                   return;
                 }
                 setBackupOpen((open) => !open);
@@ -1146,7 +1238,7 @@ export default function App() {
                 <Button
                   key={name}
                   label={name.replace(".hongguotv.json", "")}
-                  onPress={() => void importBackup(name)}
+                  onPress={() => void askRestore(name)}
                 />
               ))}
             </View>
@@ -1231,7 +1323,7 @@ export default function App() {
                         label="清空历史"
                         onFocus={() => setFocusArea("content")}
                         onPress={() =>
-                          updateLibrary((old) => ({ ...old, searches: [] }))
+                          setPending({ kind: "clear-searches" })
                         }
                       />
                     </>
@@ -1312,7 +1404,16 @@ export default function App() {
                   onPress={() => open(recent[0].series)}
                 />
               ) : (
-                <Text style={s.muted}>{shown.length} 部短剧</Text>
+                <View style={s.row}>
+                  <Text style={s.muted}>{shown.length} 部短剧</Text>
+                  {tab === "最近观看" && recent.length > 0 ? (
+                    <Button
+                      label="清空记录"
+                      onFocus={() => setFocusArea("content")}
+                      onPress={() => setPending({ kind: "clear-history" })}
+                    />
+                  ) : null}
+                </View>
               )}
             </View>
           )}
@@ -1424,9 +1525,13 @@ export default function App() {
                   <Button
                     label="删除这条记录"
                     onPress={() => {
-                      const id = quick.id;
-                      removeProgress(id);
+                      const target = quick;
                       setQuick(null);
+                      setPending({
+                        kind: "remove-record",
+                        id: target.id,
+                        title: target.title,
+                      });
                     }}
                   />
                 </>
@@ -1498,6 +1603,15 @@ export default function App() {
           </View>
         </View>
       ) : null}
+      <Confirm
+        request={confirmRequest}
+        onClose={() => setPending(null)}
+      />
+      <Info
+        title={info?.title || ""}
+        body={info?.body || ""}
+        onClose={() => setInfo(null)}
+      />
     </View>
   );
 }

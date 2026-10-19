@@ -164,6 +164,33 @@ export const Card = forwardRef<
     </Pressable>
   );
 });
+export function Check({
+    label,
+    checked,
+    onToggle,
+}: {
+    label: string;
+    checked: boolean;
+    onToggle: () => void;
+}) {
+    const [focused, setFocused] = useState(false);
+    return (
+        <Pressable
+            accessibilityRole="checkbox"
+            accessibilityLabel={label}
+            accessibilityState={{ checked }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onPress={onToggle}
+            style={[s.check, focused && s.checkFocus]}
+        >
+            <View style={[s.checkBox, checked && s.checkBoxOn]}>
+                {checked ? <Text style={s.checkMark}>✓</Text> : null}
+            </View>
+            <Text style={s.checkText}>{label}</Text>
+        </Pressable>
+    );
+}
 export function Notice({
   message,
   busy = false,
@@ -266,6 +293,27 @@ const s = StyleSheet.create({
     lineHeight: 22,
     textAlign: "center",
   },
+  check: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 16,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  checkFocus: { backgroundColor: "#29212A" },
+  checkBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: palette.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkBoxOn: { backgroundColor: palette.accent, borderColor: palette.accent },
+  checkMark: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  checkText: { color: palette.text, fontSize: 16, flexShrink: 1 },
   noticeText: {
     color: palette.muted,
     fontSize: 19,

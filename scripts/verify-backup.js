@@ -170,7 +170,7 @@ console.log("== putting a backup back ==");
         later: [show("9", "稍后看"), show("8", "另一部")],
         hidden: ["4"],
     };
-    const merged = mergeBackup(library, incoming, true);
+    const merged = mergeBackup(library, incoming);
     eq(
         merged.favorites.map((s) => s.id),
         ["1", "2", "3"],
@@ -228,7 +228,7 @@ console.log("== an older record does not replace a newer one ==");
         },
         later: [],
     };
-    const merged = mergeBackup(library, incoming, true);
+    const merged = mergeBackup(library, incoming);
     eq(
         merged.progress["1"].episodeNumber,
         3,

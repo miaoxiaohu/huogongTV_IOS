@@ -27,6 +27,7 @@ const SUITES = [
     ["media cache", "verify-cache.js"],
     ["favourite updates", "verify-favorites.js"],
     ["search history", "verify-search-history.js"],
+    ["watching records", "verify-history.js"],
     ["backup", "verify-backup.js"],
     ["update check", "verify-updates.js"],
 ];

@@ -270,12 +270,12 @@ export function decodeBackup(text: string): BackupData {
  * The favourites that are already here stay first, and only a record that is
  * newer replaces one that is older - so restoring an old backup does not
  * throw away a position the user has moved on from.
+ *
+ * The settings are not part of this: they are restored by the caller, and
+ * only when the user says so. The TV app's `merge` carries the settings
+ * inside the merged data, so it can decide there.
  */
-export function mergeBackup(
-    local: Library,
-    incoming: BackupData,
-    restoreSettings: boolean
-): Library {
+export function mergeBackup(local: Library, incoming: BackupData): Library {
     const favorites = local.favorites
         .concat(incoming.favorites)
         .filter(
@@ -350,6 +350,20 @@ export function mergeBackup(
             -500
         ),
     };
+}
+
+/**
+ * What a backup holds, in words.
+ *
+ * The user is shown this before the records are put back, so the numbers are
+ * the ones from the backup itself and not from the device - otherwise the
+ * preview would describe the wrong thing.
+ */
+export function describeBackup(data: BackupData): string {
+    const counts = `备份含 ${data.favorites.length} 部收藏、${data.history.length} 条观看记录、${data.searches.length} 条搜索、${data.later.length} 部稍后看、${data.hidden.length} 部已隐藏推荐。`;
+    const rules =
+        "收藏合并，观看位置以较新的记录为准；已有收藏优先保留（最多 500 部），历史保留最近 200 条。";
+    return `${counts}\n\n${rules}`;
 }
 
 /** The settings a backup carries, in the shape the app stores them. */
