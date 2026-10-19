@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import {
   BackHandler,
+  Linking,
   ScrollView,
   Share,
   StatusBar,
@@ -43,6 +44,13 @@ import {
   settingsFromBackup,
 } from "./src/data/backup";
 import { listBackups, readBackup, writeBackup } from "./src/data/storage";
+import {
+  AppUpdate,
+  checkForUpdate,
+  isNewer,
+  readInstalledVersion,
+  releasePage,
+} from "./src/data/updates";
 import {
   FRAME_MODES,
   PLAYBACK_SPEEDS,
@@ -131,6 +139,10 @@ export default function App() {
   // The backups that are lying around in the documents directory.
   const [backups, setBackups] = useState<string[]>([]);
   const [backupOpen, setBackupOpen] = useState(false);
+  // The update check.
+  const [updateState, setUpdateState] = useState("");
+  const [pendingUpdate, setPendingUpdate] = useState<AppUpdate | null>(null);
+  const [appVersion, setAppVersion] = useState("");
   // The search history.
   const [historyOpen, setHistoryOpen] = useState(false);
   const [play, setPlay] = useState<{
@@ -243,6 +255,9 @@ export default function App() {
     let live = true;
     listBackups().then((names) => {
       if (live) setBackups(names);
+    });
+    readInstalledVersion().then((installed) => {
+      if (live) setAppVersion(installed.version);
     });
     return () => {
       live = false;
@@ -406,6 +421,32 @@ export default function App() {
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Asks whether there is a newer build.
+   *
+   * The app cannot install one by itself - an iOS app is installed by the
+   * user - so it says what is there and opens the release page.
+   */
+  async function checkUpdate() {
+    setUpdateState("正在检查更新…");
+    try {
+      const installed = await readInstalledVersion();
+      const update = await checkForUpdate();
+      if (!isNewer(update, installed.build)) {
+        setUpdateState(`已是最新版本 ${installed.version}`);
+        return;
+      }
+      setUpdateState(
+        `发现新版 ${update.versionName}（build ${update.versionCode}）· 按此打开下载页`
+      );
+      setPendingUpdate(update);
+    } catch (error) {
+      setUpdateState(
+        error instanceof Error ? error.message : "无法检查更新，请稍后重试"
+      );
     }
   }
 
@@ -1052,6 +1093,27 @@ export default function App() {
             />
           </View>
           <Text style={s.label}>关于</Text>
+          <View style={s.row}>
+            <Button
+              label={appVersion ? `版本与更新 · ${appVersion}` : "版本与更新"}
+              onFocus={() => setFocusArea("content")}
+              onPress={() => void checkUpdate()}
+            />
+            {pendingUpdate ? (
+              <Button
+                label={`下载 ${pendingUpdate.versionName}`}
+                primary
+                onPress={() => {
+                  void Linking.openURL(releasePage(pendingUpdate.tag));
+                }}
+              />
+            ) : null}
+          </View>
+          {updateState ? (
+            <Text accessibilityLiveRegion="polite" style={s.feedback}>
+              {updateState}
+            </Text>
+          ) : null}
           <Text style={s.note}>
             本 iOS 版以 GPL-3.0 发布。{"\n"}
             内容协议与加密处理移植自 drpys（22261ad）。{"\n"}

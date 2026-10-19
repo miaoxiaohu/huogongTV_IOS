@@ -3,11 +3,15 @@ name: iOS Build
 on:
   push:
     branches: [main]
+    tags: ["ios-v*"]
   workflow_dispatch:
 
 concurrency:
   group: ios-build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -100,3 +104,46 @@ jobs:
           name: hongguoTV-unsigned-ipa
           path: hongguoTV-unsigned.ipa
           retention-days: 30
+
+      # A tagged build is published as a release with a manifest next to it,
+      # and the app reads that manifest to find out whether it is the newest
+      # build. The manifest shape is the TV app's, so the two understand each
+      # other's releases.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/ios-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -o 'MARKETING_VERSION = [0-9.]*' ios/HongguoTV.xcodeproj/project.pbxproj | head -1 | awk '{print $3}')
+          BUILD=$(grep -o 'CURRENT_PROJECT_VERSION = [0-9]*' ios/HongguoTV.xcodeproj/project.pbxproj | head -1 | awk '{print $3}')
+          TAG="${GITHUB_REF_NAME}"
+          if [ -z "${VERSION}" ] || [ -z "${BUILD}" ]; then
+            echo "FAIL: the version is not in the project file"
+            exit 1
+          fi
+          NAME="hongguotv-ios-${VERSION}.ipa"
+          SHA=$(shasum -a 256 hongguoTV-unsigned.ipa | awk '{print $1}')
+          SIZE=$(wc -c < hongguoTV-unsigned.ipa | tr -d ' ')
+          cp hongguoTV-unsigned.ipa "${NAME}"
+          cat > update.json <<JSON
+          {
+            "schema": 1,
+            "packageName": "org.reactjs.native.example.HongguoTV",
+            "versionCode": ${BUILD},
+            "versionName": "${VERSION}",
+            "tag": "${TAG}",
+            "ipa": { "name": "${NAME}", "size": ${SIZE}, "sha256": "${SHA}" },
+            "notes": "红果 TV iOS 版 ${VERSION}（build ${BUILD}）。这是未签名包，用 Sideloadly 或 AltStore 安装。"
+          }
+          JSON
+          # The manifest is what the app reads, so it has to be there even when
+          # the release itself already exists.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${NAME}" update.json --clobber
+          else
+            gh release create "${TAG}" "${NAME}" update.json \
+              --title "红果 TV iOS ${VERSION}" \
+              --notes "红果 TV iOS 版 ${VERSION}（build ${BUILD}）。未签名包，用 Sideloadly 或 AltStore 安装。"
+          fi
+          echo "published ${TAG}"

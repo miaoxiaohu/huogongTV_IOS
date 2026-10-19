@@ -28,6 +28,7 @@ const SUITES = [
     ["favourite updates", "verify-favorites.js"],
     ["search history", "verify-search-history.js"],
     ["backup", "verify-backup.js"],
+    ["update check", "verify-updates.js"],
 ];
 
 let failed = 0;
