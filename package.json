@@ -4,18 +4,13 @@
   "private": true,
   "scripts": {
     "start": "react-native start",
-    "android": "react-native run-android",
-    "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.*",
-    "bridge": "node server/index.mjs",
-    "probe": "node scripts/probe.mjs",
-    "build:android": "bash scripts/build-android.sh"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "axios": "1.13.6",
     "react": "19.1.0",
-    "react-native": "npm:react-native-tvos@0.81.5-2",
+    "react-native": "0.81.5",
     "react-native-video": "6.19.3"
   },
   "devDependencies": {
@@ -23,7 +18,6 @@
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
     "@react-native-community/cli": "20.0.0",
-    "@react-native-community/cli-platform-android": "20.0.0",
     "@react-native-community/cli-platform-ios": "20.0.0",
     "@react-native/babel-preset": "0.81.5",
     "@react-native/metro-config": "0.81.5",
