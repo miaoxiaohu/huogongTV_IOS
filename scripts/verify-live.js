@@ -116,6 +116,27 @@ function decodeFirstFrame(file, outPng) {
 }
 
 /**
+ * Resolves a stream, trying again when the signed player answers badly.
+ *
+ * The player answers with an empty body every so often, and it can answer
+ * with a refusal for a moment. The app retries on its own - the recovery
+ * controller gives it three tries - but the test talks to the data layer
+ * directly, so it has to do the retrying itself.
+ */
+async function resolveWithRetry(provider, episodeId, attempts = 3) {
+    let last;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+            return await provider.resolveStream(episodeId);
+        } catch (error) {
+            last = error;
+            await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        }
+    }
+    throw last;
+}
+
+/**
  * Resolves an episode and keeps the responses the provider fetched.
  *
  * The fallback url is a "hand out fresh signing material" endpoint: every
@@ -133,7 +154,7 @@ async function resolveWithCapture(provider, episodeId) {
         return text;
     };
     try {
-        const stream = await provider.resolveStream(episodeId);
+        const stream = await resolveWithRetry(provider, episodeId);
         return { stream, captured };
     } finally {
         provider["fetchText"] = original;
@@ -264,7 +285,7 @@ function renditionList(captured) {
         for (const ceiling of [360, 540, 720, 1080]) {
             const p = new ApiProvider({ category: "short", maxQuality: ceiling });
             try {
-                const s = await p.resolveStream(episode4.id);
+                const s = await resolveWithRetry(p, episode4.id);
                 if (s.quality !== "1080P") {
                     fail("maxQuality " + ceiling + " picked " + s.quality + ", expected 1080P");
                 } else {
@@ -279,7 +300,7 @@ function renditionList(captured) {
         for (const ceiling of [360, 540, 720, 1080]) {
             const p = new ApiProvider({ category: "short", maxQuality: ceiling });
             try {
-                const s = await p.resolveStream(episode1.id);
+                const s = await resolveWithRetry(p, episode1.id);
                 const expected = ceiling + "P";
                 if (s.quality !== expected) {
                     fail("maxQuality " + ceiling + " picked " + s.quality + ", expected " + expected);
