@@ -1018,7 +1018,7 @@ function argus(ts: number): string {
   ).replace(/=+$/, "");
 }
 
-export type SignedRequest = {
+type SignedRequest = {
   url: string;
   headers: Record<string, string>;
   body: Uint8Array | null;

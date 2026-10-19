@@ -16,7 +16,13 @@ import {
   Playback,
   Series,
 } from "../domain/model";
-import { sign, newDevice, SignedRequest } from "./signer";
+import { sign, newDevice } from "./signer";
+
+type SignedRequest = {
+  url: string;
+  headers: Record<string, string>;
+  body: Uint8Array | null;
+};
 
 const SITE = "https://hongguoduanju.com";
 const VIDEO_API = "https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/";
