@@ -208,6 +208,42 @@ function decodeFirstFrame(file, outPng) {
             );
     }
 
+    console.log("== cache behaviour ==");
+    {
+        // A second call without `fresh` must reuse the finished file.
+        const again = await prepareLocalMedia({
+            url: stream.url,
+            key: stream.key,
+            headers: stream.headers,
+            episodeId,
+            quality: "720",
+        });
+        again === outPath
+            ? ok("the second call reuses the cached file")
+            : fail("the second call did not reuse the cache");
+    }
+    {
+        // A `fresh` call must throw the cached file away first, so a file
+        // that failed to play can be replaced.
+        let failed = false;
+        try {
+            await prepareLocalMedia({
+                url: "https://127.0.0.1:1/nothing.mp4",
+                key: stream.key,
+                headers: stream.headers,
+                episodeId,
+                quality: "720",
+                fresh: true,
+            });
+        } catch (e) {
+            failed = true;
+        }
+        const stillThere = fs.existsSync(outPath);
+        failed && !stillThere
+            ? ok("a fresh run discards the cached file")
+            : fail("fresh=" + failed + " cachedFileStillThere=" + stillThere);
+    }
+
     console.log(failures ? "\nFAILED (" + failures + ")" : "\nALL PASS");
     process.exit(failures ? 1 : 0);
 })().catch((e) => {

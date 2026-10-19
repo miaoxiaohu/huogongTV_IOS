@@ -249,7 +249,7 @@ export class ApiProvider implements ContentProvider {
 
   async resolve(
     id: string,
-    _fresh = false,
+    fresh = false,
     onProgress?: (progress: PlaybackProgress) => void
   ): Promise<Playback> {
     // The signed player covers every episode. The public plain MP4 is the
@@ -263,6 +263,7 @@ export class ApiProvider implements ContentProvider {
         headers: stream.headers,
         episodeId: id,
         quality: stream.quality,
+        fresh,
         onProgress,
       });
       return { uri: `file://${path}`, headers: {}, quality: stream.quality };

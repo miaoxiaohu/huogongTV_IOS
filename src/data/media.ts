@@ -34,6 +34,8 @@ export type MediaRequest = {
   headers: Record<string, string>;
   episodeId: string;
   quality: string;
+  /** Ignore a cached copy and fetch the episode again. */
+  fresh?: boolean;
   onProgress?: (progress: MediaProgress) => void;
 };
 
@@ -63,14 +65,17 @@ export async function prepareLocalMedia(request: MediaRequest): Promise<string> 
   const outPath = `${dir}/play-${tag}.mp4`;
   const partPath = `${outPath}.part`;
 
-  // A previous visit may already have prepared this episode.
-  if (await FileSystem.exists(outPath)) {
+  // A previous visit may already have prepared this episode. A fresh run
+  // skips the cache: a cached file that failed to play has to be replaced,
+  // not handed back again.
+  if (!request.fresh && (await FileSystem.exists(outPath))) {
     const stat = await FileSystem.stat(outPath);
     if (stat.size > MIN_PLAYABLE) {
       report?.({ percent: 100, message: "已缓存，正在打开" });
       return outPath;
     }
   }
+  if (await FileSystem.exists(outPath)) await FileSystem.unlink(outPath);
   if (await FileSystem.exists(partPath)) await FileSystem.unlink(partPath);
 
   report?.({ percent: 0, message: "正在下载视频" });
