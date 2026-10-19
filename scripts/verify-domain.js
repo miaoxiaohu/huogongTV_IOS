@@ -45,6 +45,12 @@ module.exports = {
     "utf8"
 );
 mockModule("@react-native-async-storage/async-storage", mockPath);
+// The file system is only used for the backups, and the native module cannot
+// load outside an app.
+const { installFileSystemMock } = require("./fixtures/fs-mock");
+const fsMockPath = path.join(WORK, "file_access_mock.js");
+installFileSystemMock(fsMockPath, path.join(WORK, "hongguotv"));
+mockModule("react-native-file-access", fsMockPath);
 // The mock owns the store, so the test has to use that one and not its own.
 const store = require(mockPath).store;
 const cache = transpile("domain-verify");

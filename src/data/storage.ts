@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Dirs, FileSystem } from "react-native-file-access";
 import { Library, Progress, Series, Settings } from "../domain/model";
 import { normalizeFrameMode, normalizeSpeed } from "./playback";
 import { CatalogueRoute, CatalogueSnapshot, emptySnapshot } from "./catalogue";
@@ -115,8 +116,37 @@ function readUpdates(value: any): Record<string, FavoriteUpdate> {
   return updates;
 }
 
-/** Reads the shows the user marked as watched through. */
-function readWatched(value: any): string[] {
+/**
+ * The backups that are lying around in the documents directory.
+ *
+ * The user puts a backup there with the Files app, and the app writes its own
+ * there so it can be shared out.
+ */
+export async function listBackups(): Promise<string[]> {
+    try {
+        const names = await FileSystem.ls(Dirs.DocumentDir);
+        return names
+            .filter((name) => name.endsWith(".hongguotv.json"))
+            .sort()
+            .reverse();
+    } catch {
+        return [];
+    }
+}
+
+/** Writes a backup into the documents directory. */
+export async function writeBackup(name: string, text: string): Promise<string> {
+    const path = `${Dirs.DocumentDir}/${name}`;
+    await FileSystem.writeFile(path, text, "utf8");
+    return path;
+}
+
+/** Reads a backup back. */
+export async function readBackup(path: string): Promise<string> {
+    return FileSystem.readFile(path, "utf8");
+}
+
+/** Reads the shows the user marked as watched through. */function readWatched(value: any): string[] {
   if (!Array.isArray(value)) return [];
   const rows: string[] = [];
   for (const raw of value) {

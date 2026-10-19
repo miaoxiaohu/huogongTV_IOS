@@ -8,6 +8,7 @@ import React, {
 import {
   BackHandler,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -18,6 +19,7 @@ import {
 import { BridgeProvider } from "./src/data/provider";
 import { ApiProvider } from "./src/data/api";
 import { loadState, saveLibrary, saveSettings, loadCatalogue, saveCatalogue } from "./src/data/storage";
+import { Dirs } from "react-native-file-access";
 import {
   CatalogueEntries,
   CatalogueIndex,
@@ -34,6 +36,13 @@ import {
   shouldCheck,
 } from "./src/data/favorites";
 import { rememberSearch, RecentSearch } from "./src/data/searchHistory";
+import {
+  decodeBackup,
+  encodeBackup,
+  mergeBackup,
+  settingsFromBackup,
+} from "./src/data/backup";
+import { listBackups, readBackup, writeBackup } from "./src/data/storage";
 import {
   FRAME_MODES,
   PLAYBACK_SPEEDS,
@@ -118,6 +127,9 @@ export default function App() {
   // The favourites' update check.
   const [checking, setChecking] = useState(false);
   const [favoriteStatus, setFavoriteStatus] = useState("");
+  // The backups that are lying around in the documents directory.
+  const [backups, setBackups] = useState<string[]>([]);
+  const [backupOpen, setBackupOpen] = useState(false);
   // The search history.
   const [historyOpen, setHistoryOpen] = useState(false);
   const [play, setPlay] = useState<{
@@ -223,6 +235,18 @@ export default function App() {
   useEffect(() => {
     if (play) walkCancelled.current = true;
   }, [play]);
+  // The backups that are lying around are only worth listing when the user
+  // goes to the settings.
+  useEffect(() => {
+    if (tab !== "设置") return;
+    let live = true;
+    listBackups().then((names) => {
+      if (live) setBackups(names);
+    });
+    return () => {
+      live = false;
+    };
+  }, [tab]);
   async function startWalk(fromScratch: boolean, base?: CatalogueSnapshot) {
     if (walkRunning.current) return;
     // A self hosted service has no catalogue to walk.
@@ -333,6 +357,55 @@ export default function App() {
         watched: old.watched.filter((row) => row !== id),
       };
     });
+  }
+
+  /**
+   * Writes the local records into a file the user can keep.
+   *
+   * The file goes into the app's documents directory, which the Files app
+   * can see, and the share sheet sends it wherever the user wants.
+   */
+  async function exportBackup() {
+    setBusy(true);
+    try {
+      const text = encodeBackup(library, settings, Date.now());
+      const name = `hongguotv-${new Date().toISOString().slice(0, 10)}.hongguotv.json`;
+      const path = await writeBackup(name, text);
+      setMessage(`已导出到 ${name}`);
+      await Share.share({ url: "file://" + path, message: name });
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "本机记录暂时无法导出，请重试"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Puts a backup back together with what is on the device. */
+  async function importBackup(name: string) {
+    setBusy(true);
+    try {
+      const text = await readBackup(`${Dirs.DocumentDir}/${name}`);
+      const backup = decodeBackup(text);
+      const merged = mergeBackup(library, backup, true);
+      setLibrary(merged);
+      libraryRef.current = merged;
+      await saveLibrary(merged);
+      const next = { ...settings, ...settingsFromBackup(backup.settings) };
+      setSettings(next);
+      setCategory(next.category === "comic" ? "comic" : "short");
+      setMaxQuality(next.maxQuality ?? 540);
+      await saveSettings(next);
+      setMessage("记录已合并恢复");
+      setBackups([]);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "这个备份读不出来，请换一个"
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   /** Plays a show from the quick actions, at the place it was left. */
@@ -966,6 +1039,40 @@ export default function App() {
               }
             />
           </View>
+          <Text style={s.label}>备份与恢复</Text>
+          <View style={s.row}>
+            <Button
+              label={busy ? "正在处理…" : "备份本机记录"}
+              disabled={busy}
+              onPress={() => void exportBackup()}
+            />
+            <Button
+              label={backups.length ? `恢复（${backups.length}）` : "从备份恢复"}
+              disabled={busy || backups.length === 0}
+              onPress={() => {
+                if (backups.length === 1) {
+                  void importBackup(backups[0]);
+                  return;
+                }
+                setBackupOpen((open) => !open);
+              }}
+            />
+          </View>
+          {backupOpen && backups.length > 1 ? (
+            <View style={[s.row, { marginTop: 10 }]}>
+              {backups.map((name) => (
+                <Button
+                  key={name}
+                  label={name.replace(".hongguotv.json", "")}
+                  onPress={() => void importBackup(name)}
+                />
+              ))}
+            </View>
+          ) : null}
+          <Text style={[s.description, { marginTop: 8 }]}>
+            备份是一个 json 文件，放在本 App 的「文件」目录里，可以用「文件」App 取走或放回。
+            格式和电视端一样，两边的备份通用。恢复是合并：已有的收藏排在前面，只有更新的观看进度才会替换本机的。
+          </Text>
           {!!message && (
             <Text accessibilityLiveRegion="polite" style={s.feedback}>
               {message}

@@ -52,7 +52,10 @@ export async function pruneMediaCache(
 ): Promise<number> {
   let entries: any[] = [];
   try {
-    entries = await FileSystem.ls(dir);
+    // statDir gives the name, the size and the time of every file in one
+    // go. `ls` only gives the names, and the size would need a stat per
+    // file.
+    entries = await FileSystem.statDir(dir);
   } catch {
     return 0;
   }
@@ -62,10 +65,10 @@ export async function pruneMediaCache(
       (entry: any) =>
         entry &&
         entry.type === "file" &&
-        String(entry.name || "").startsWith("play-") &&
-        String(entry.name || "").endsWith(".mp4")
+        String(entry.filename || "").startsWith("play-") &&
+        String(entry.filename || "").endsWith(".mp4")
     )
-    .sort((a: any, b: any) => (b.mtime || 0) - (a.mtime || 0));
+    .sort((a: any, b: any) => (b.lastModified || 0) - (a.lastModified || 0));
   let total = 0;
   let deleted = 0;
   for (let index = 0; index < files.length; index++) {
