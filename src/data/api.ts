@@ -22,9 +22,9 @@ const SITE = "https://hongguoduanju.com";
 const VIDEO_API = "https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/";
 const FETCH_TIMEOUT = 65000;
 
-export interface ApiSettings {
+export type ApiSettings = {
   category: "short" | "comic";
-}
+};
 
 export class ApiProvider implements ContentProvider {
   private category: string;

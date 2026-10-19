@@ -817,15 +817,18 @@ function gorgon(
   for (let i = 0; i < out.length; i++) {
     const value = (((out[i] >>> 4) | (out[i] << 4)) & 255);
     const next = i + 1 < out.length ? out[i + 1] : 0;
-    const reversed = (Integer.reverse((next ^ value) & 255) >>> 24);
-    out[i] = (~(reversed ^ 20)) & 255;
+    const byte = (next ^ value) & 255;
+    const r1 = ((byte >> 1) & 0x55) | ((byte & 0x55) << 1);
+    const r2 = ((r1 >> 2) & 0x33) | ((r1 & 0x33) << 2);
+    const reversed8 = ((r2 >> 4) & 0x0f) | ((r2 & 0x0f) << 4);
+    out[i] = (~(reversed8 ^ 20)) & 255;
   }
   return bytesToHex(
     concat(hex("8404"), new Uint8Array([random & 255, (random >>> 8) & 255, 0x40, 1]), out)
   );
 }
 
-function Integer() {} // namespace
+
 
 function medusa(
   url: string,
@@ -1015,11 +1018,11 @@ function argus(ts: number): string {
   ).replace(/=+$/, "");
 }
 
-export interface SignedRequest {
+export type SignedRequest = {
   url: string;
   headers: Record<string, string>;
   body: Uint8Array | null;
-}
+};
 
 function encodeValue(value: string): string {
   return encodeURIComponent(value)
