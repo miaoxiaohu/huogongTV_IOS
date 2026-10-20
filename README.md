@@ -142,6 +142,14 @@ iOS 的包得用户自己装，所以 App 只报「发现新版 X」并打开下
 
 自动重试的时序和预算在 `src/data/recovery.ts` 里，`scripts/verify-recovery.js` 用假时钟把它整个验一遍。
 
+## 为什么会闪退：原生侧挂载的模块名
+
+原生侧启动时按名字挂载根视图，JS 侧按名字注册 App，两个名字必须一样。
+
+`ios/HongguoTV/AppDelegate.swift` 写的是 `withModuleName: "HongguoTVTemp"`，而 `app.json` 里 `name` 是 `HongguoTV`，`index.js` 注册的也是后者。两边对不上时，`AppRegistry` 的 `invariant` 会抛 `"HongguoTVTemp" has not been registered`，RN 在生产环境把它升级成 `RCTFatal`（`RCTAssert.h` 里写明这些调用在生产环境不会被编掉、默认就让 App 崩），进程直接被终止 —— **点开就闪退，屏幕上什么也没有**。
+
+同一个名字散在三个文件里，所以 `scripts/verify-ios-app.js` 把它们对着查：原生挂载的名字 = `app.json` 的 `name` = `PRODUCT_NAME`；`PRODUCT_BUNDLE_IDENTIFIER` 展开后 = `src/data/updates.ts` 里的 `PACKAGE_NAME`（更新清单要靠它认出这是哪个 App）；`CFBundleDisplayName` = `app.json` 的 `displayName`；`UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` 必须开着（备份文件要靠它们才能在「文件」App 里进出）；站点是 https 时 `NSAllowsArbitraryLoads` 才能是 false。
+
 ## 开发
 
 ```bash
@@ -160,6 +168,7 @@ npm run check        # 解析 + 类型检查 + 全部离线套件
 
 | 脚本 | 验什么 | 对照组 |
 | --- | --- | --- |
+| `verify-ios-app.js` | 原生挂载的模块名、bundle id、图标名、文件共享开关、传输安全策略 | `app.json` + `AppDelegate.swift` + `Info.plist` + `project.pbxproj` |
 | `verify-signer.js` | MD5 / SM3 哈希 | `node:crypto` |
 | `verify-crypto.js` | AES-128/192/256、CBC、CTR、SHA-512 | `node:crypto` |
 | `verify-base64.js` | base64 编解码 | Node `Buffer` |

@@ -24,7 +24,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
-      withModuleName: "HongguoTVTemp",
+      // This has to be the name the JavaScript registers the app under:
+      // `AppRegistry.registerComponent` in index.js, which takes it from
+      // app.json. Ask for a name that is not registered and the app dies on
+      // launch - the bridge cannot find the component to mount.
+      withModuleName: "HongguoTV",
       in: window,
       launchOptions: launchOptions
     )

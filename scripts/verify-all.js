@@ -12,6 +12,7 @@ const { execFileSync } = require("child_process");
 const path = require("path");
 
 const SUITES = [
+    ["the iOS project", "verify-ios-app.js"],
     ["signer", "verify-signer.js"],
     ["crypto", "verify-crypto.js"],
     ["base64", "verify-base64.js"],
