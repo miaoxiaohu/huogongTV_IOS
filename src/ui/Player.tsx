@@ -30,9 +30,12 @@ const clock = formatClock;
 /**
  * A phone has no remote, so the things the remote does on the TV have to be
  * on the screen here: a way back, and a way to open the panel of choices.
- * A tvOS build keeps the remote's own way round.
+ *
+ * A tvOS build keeps the remote's own way round. `Platform.isTV` is what
+ * tells the two apart: a tvOS build of React Native reports "ios" as its
+ * platform, so the platform alone does not say whether there is a remote.
  */
-const isPhone = Platform.OS === "ios";
+const isPhone = Platform.OS === "ios" && !Platform.isTV;
 export function Player({
   detail,
   initialIndex,
@@ -496,7 +499,11 @@ export function Player({
           hasTVPreferredFocus={!panel && !error}
           accessibilityRole="button"
           accessibilityLabel={
-            paused ? "视频已暂停，按确认继续播放" : "视频播放中，按确认暂停"
+            isPhone
+              ? "显示播放控件"
+              : paused
+              ? "视频已暂停，按确认继续播放"
+              : "视频播放中，按确认暂停"
           }
           onPress={() => {
             // On the TV the remote's "select" pauses and resumes. On a phone
@@ -592,6 +599,9 @@ export function Player({
               // the way to the same place is the bar itself.
               const width = trackWidth.current;
               if (!width || !duration) return;
+              // The controls are shown again, so they do not fade away right
+              // after the seek.
+              reveal();
               const ratio = Math.min(1, Math.max(0, event.nativeEvent.locationX / width));
               const value = ratio * duration;
               pendingSeek.current = Date.now();

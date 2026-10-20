@@ -17,7 +17,7 @@ module.exports = {
     Image: host("Image"),
     Linking: { openURL: async () => true },
     Modal: host("Modal"),
-    Platform: { OS: "ios", select: (spec) => spec.ios },
+    Platform: { OS: "ios", isTV: false, select: (spec) => spec.ios },
     Pressable: host("Pressable"),
     ScrollView: host("ScrollView"),
     Text: host("Text"),

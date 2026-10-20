@@ -47,14 +47,21 @@ const detail = {
     ],
 };
 
-// A provider that never answers, so the player stays in its "preparing" state
-// - the buttons have to be there before the video is ready as well.
+// A provider that answers with a file, the way the real one does once the
+// episode has been downloaded and decrypted.
 const provider = {
-    resolve: () => new Promise(() => {}),
+    resolve: async () => ({
+        uri: "file:///tmp/hongguotv/play-1-1080P.mp4",
+        headers: {},
+        quality: "1080P",
+    }),
     home: async () => [],
     search: async () => [],
     detail: async () => detail,
 };
+
+/** Lets the promises the player starts settle. */
+const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 let exits = 0;
 let saved = 0;
@@ -77,6 +84,7 @@ const element = shim.jsx(Player, {
 
 const labels = (tree) => shim.buttons(tree).map((b) => b.props.accessibilityLabel);
 
+(async () => {
 console.log("== there is a way out of the player ==");
 {
     const tree = shim.render(element);
@@ -126,6 +134,35 @@ console.log("== playback can be paused with a finger ==");
     );
 }
 
+console.log("== the progress bar can be touched ==");
+{
+    // The video tells how long it is, so the bar knows what a tap means.
+    await tick();
+    shim.rerender();
+    const tree = shim.render(element);
+    const track = tree.find((e) => e.props && e.props.hitSlop);
+    if (!track) {
+        fail("the progress bar is not a control");
+    } else {
+        track.props.onLayout({ nativeEvent: { layout: { width: 200 } } });
+        track.props.onPress({ nativeEvent: { locationX: 100 } });
+        const after = shim.rerender();
+        const texts = after
+            .filter((e) => e.type && e.type.$$host === "Text")
+            .flatMap((e) =>
+                Array.isArray(e.props.children)
+                    ? e.props.children
+                    : [e.props.children]
+            )
+            .filter((t) => typeof t === "string");
+        eq(
+            texts.some((t) => t.indexOf("0:50") >= 0),
+            true,
+            "the tap moved the position to where it was tapped"
+        );
+    }
+}
+
 console.log("== there is a way back out of the detail page ==");
 {
     // The app itself cannot be drawn here - it talks to the network as soon
@@ -144,3 +181,4 @@ console.log("== there is a way back out of the detail page ==");
 
 console.log(failures ? "\nFAILED (" + failures + ")" : "\nALL PASS");
 process.exit(failures ? 1 : 0);
+})();
