@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
   BackHandler,
+  Platform,
   StyleSheet,
   Pressable,
   useWindowDimensions,
@@ -26,6 +27,12 @@ import {
 import { Button, Notice, palette } from "./components";
 import { seekPosition, tvInsets } from "./tv/layout";
 const clock = formatClock;
+/**
+ * A phone has no remote, so the things the remote does on the TV have to be
+ * on the screen here: a way back, and a way to open the panel of choices.
+ * A tvOS build keeps the remote's own way round.
+ */
+const isPhone = Platform.OS === "ios";
 export function Player({
   detail,
   initialIndex,
@@ -103,6 +110,7 @@ export function Player({
     completed: false,
   });
   const seekStart = useRef(initialPosition);
+  const trackWidth = useRef(0);
   const lastSaved = useRef(0);
   // The recovery controller is created before `refresh` exists, so it calls
   // it through a ref.
@@ -490,20 +498,37 @@ export function Player({
           accessibilityLabel={
             paused ? "视频已暂停，按确认继续播放" : "视频播放中，按确认暂停"
           }
-          onPress={togglePlayback}
+          onPress={() => {
+            // On the TV the remote's "select" pauses and resumes. On a phone
+            // a tap on the picture is the way to bring the controls back -
+            // pausing by accident is worse than not having the shortcut.
+            if (isPhone) reveal();
+            else togglePlayback();
+          }}
         />
       </TVFocusGuideView>
       {showControls && (
         <View
-          pointerEvents="none"
+          pointerEvents="box-none"
           style={[
             s.top,
             { paddingHorizontal: inset.horizontal, paddingTop: inset.vertical },
           ]}
         >
-          <Text style={s.title} numberOfLines={2}>
-            {detail.title}
-          </Text>
+          <View style={s.topRow}>
+            <Text style={[s.title, { flex: 1 }]} numberOfLines={2}>
+              {detail.title}
+            </Text>
+            {isPhone ? (
+              <Button
+                label="返回"
+                onPress={() => {
+                  save();
+                  onExit();
+                }}
+              />
+            ) : null}
+          </View>
           <Text style={s.subtitle}>
             {episode.title}
             {test ? " · 公开测试片" : ` / 共 ${detail.episodes.length} 集`}
@@ -552,9 +577,31 @@ export function Player({
               paddingBottom: inset.vertical,
             },
           ]}
-          pointerEvents={panel ? "auto" : "none"}
+          pointerEvents="box-none"
         >
-          <View style={s.track}>
+          <Pressable
+            style={s.track}
+            // The bar is three pixels high, so the touch area is made
+            // bigger around it - otherwise it cannot be hit.
+            hitSlop={{ top: 14, bottom: 14, left: 0, right: 0 }}
+            onLayout={(event) => {
+              trackWidth.current = event.nativeEvent.layout.width;
+            }}
+            onPress={(event) => {
+              // The remote seeks with the left and the right key. On a phone
+              // the way to the same place is the bar itself.
+              const width = trackWidth.current;
+              if (!width || !duration) return;
+              const ratio = Math.min(1, Math.max(0, event.nativeEvent.locationX / width));
+              const value = ratio * duration;
+              pendingSeek.current = Date.now();
+              video.current?.seek(value);
+              progress.current.position = value;
+              progress.current.completed = false;
+              setFinished(false);
+              setPosition(value);
+            }}
+          >
             <View
               style={[
                 s.fill,
@@ -565,7 +612,7 @@ export function Player({
                 },
               ]}
             />
-          </View>
+          </Pressable>
           <View style={s.time}>
             <Text style={s.subtitle}>
               {clock(position)} / {clock(duration)}
@@ -657,6 +704,19 @@ export function Player({
                 </>
               )}
             </TVFocusGuideView>
+          ) : isPhone ? (
+            // The remote's "down" key opens the panel on the TV. A phone has
+            // no remote, so the panel is opened from a button.
+            <View style={s.controls}>
+              <Button
+                label={
+                  finished ? "重新播放" : paused ? "继续播放" : "暂停"
+                }
+                primary
+                onPress={togglePlayback}
+              />
+              <Button label="更多" onPress={() => setPanel(true)} />
+            </View>
           ) : (
             <Text style={s.hint}>
               确认 播放/暂停　 ·　 左右 快进/退 10 秒，长按连续　 ·　 下键
@@ -680,6 +740,7 @@ const s = StyleSheet.create({
     backgroundColor: "#101016D0",
   },
   title: { color: palette.text, fontSize: 24, fontWeight: "600" },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   subtitle: { color: palette.muted, fontSize: 15 },
   bottom: {
     position: "absolute",

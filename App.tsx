@@ -1003,7 +1003,16 @@ export default function App() {
             ))}
           </View>
         ) : (
-          <Text style={s.muted}>剧集详情 · 返回键回到列表</Text>
+          <View style={s.row}>
+            {/* The TV app walks back with the remote's back key. A phone has
+                no such key, so the way back is a button. */}
+            <Button
+              label="返回"
+              onFocus={() => setFocusArea("nav")}
+              onPress={closeDetail}
+            />
+            <Text style={s.muted}>剧集详情</Text>
+          </View>
         )}
       </View>
       {detailId ? (

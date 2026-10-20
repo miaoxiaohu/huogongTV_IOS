@@ -25,7 +25,13 @@ const Fragment = Symbol.for("react.fragment");
 
 function hooksFor(key) {
     if (!store.has(key)) {
-        store.set(key, { state: [], refs: [], effects: [], cursor: 0 });
+        store.set(key, {
+            state: [],
+            refs: [],
+            effects: [],
+            memos: [],
+            cursor: 0,
+        });
     }
     return store.get(key);
 }
@@ -78,6 +84,27 @@ function useEffect(fn, deps) {
     }
 }
 
+/** The callback is handed back as it is; the stand-in does not memoise. */
+function useCallback(fn) {
+    return fn;
+}
+
+/** The value is computed once and then kept. */
+function useMemo(factory, deps) {
+    const hooks = current;
+    const slot = nextSlot(hooks, hooks.memos);
+    const changed =
+        !slot.deps ||
+        !deps ||
+        !slot.deps.length ||
+        deps.some((value, index) => !Object.is(value, slot.deps[index]));
+    if (changed) {
+        slot.deps = deps;
+        slot.value = factory();
+    }
+    return slot.value;
+}
+
 function forwardRef(fn) {
     const wrapped = (props) => fn(props, props && props.ref);
     wrapped.displayName = fn.name;
@@ -100,7 +127,24 @@ function createElement(type, props, ...children) {
  * Renders a tree and returns every host element in it, in the order they
  * appear. A host element is anything that is not a function component.
  */
+let lastRoot = null;
+
 function render(element) {
+    lastRoot = element;
+    return draw(element);
+}
+
+/**
+ * Draws the tree again, with the hooks as they are now.
+ *
+ * This is what a state change does in React: the component is called again
+ * with the same props, and the hooks keep what they had.
+ */
+function rerender() {
+    return lastRoot === null ? [] : draw(lastRoot);
+}
+
+function draw(element) {
     const out = [];
     walk(element, "", out);
     for (const effect of effects.splice(0)) effect();
@@ -162,6 +206,10 @@ function install(cache) {
         "react-native",
         path.join(__dirname, "react-native-shim.js")
     );
+    mockModule(
+        "react-native-video",
+        path.join(__dirname, "react-native-video-shim.js")
+    );
     return cache;
 }
 
@@ -181,9 +229,12 @@ module.exports = {
     useState,
     useRef,
     useEffect,
+    useCallback,
+    useMemo,
     createElement,
     jsx,
     render,
+    rerender,
     reset,
     install,
     buttons,

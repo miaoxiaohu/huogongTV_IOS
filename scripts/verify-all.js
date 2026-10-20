@@ -13,6 +13,7 @@ const path = require("path");
 
 const SUITES = [
     ["the iOS project", "verify-ios-app.js"],
+    ["the player on a phone", "verify-player-ui.js"],
     ["signer", "verify-signer.js"],
     ["crypto", "verify-crypto.js"],
     ["base64", "verify-base64.js"],
